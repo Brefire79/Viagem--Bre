@@ -381,7 +381,7 @@ service cloud.firestore {
 
 Este projeto é de código aberto e pode ser usado livremente.
 
-## 👤 Autor
+## 👤 Breno Luis
 
 Desenvolvido com ❤️ para facilitar o planejamento de viagens em grupo.
 
