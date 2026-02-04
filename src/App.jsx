@@ -4,11 +4,13 @@ import { AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TripProvider } from './contexts/TripContext';
 import Layout from './components/Layout';
+import UpdateNotification from './components/UpdateNotification';
 
 const AuthPage = lazy(() => import('./pages/AuthPage'));
 const RoteiroPage = lazy(() => import('./pages/RoteiroPage'));
 const FinanceiroPage = lazy(() => import('./pages/FinanceiroPage'));
 const HistoriaPage = lazy(() => import('./pages/HistoriaPage'));
+const CambioPage = lazy(() => import('./pages/CambioPage'));
 const GerenciarViagemPage = lazy(() => import('./pages/GerenciarViagemPage'));
 
 const PageFallback = () => (
@@ -72,6 +74,7 @@ function AppRoutes() {
             <Route path="/roteiro" element={<RoteiroPage />} />
             <Route path="/financeiro" element={<FinanceiroPage />} />
             <Route path="/historia" element={<HistoriaPage />} />
+            <Route path="/cambio" element={<CambioPage />} />
             <Route path="/gerenciar" element={<GerenciarViagemPage />} />
           </Route>
 
@@ -93,6 +96,7 @@ function App() {
     >
       <AuthProvider>
         <AppRoutes />
+        <UpdateNotification />
       </AuthProvider>
     </BrowserRouter>
   );

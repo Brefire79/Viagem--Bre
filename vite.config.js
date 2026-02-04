@@ -7,8 +7,12 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['pwa-192x192.png', 'pwa-512x512.png'],
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'service-worker.js',
+      registerType: 'prompt',
+      injectRegister: false,
+      includeAssets: ['icon-192.svg', 'icon.svg'],
       manifest: {
         name: 'Viagem Colaborativa',
         short_name: 'Viagem',
@@ -21,47 +25,22 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: 'icon-192.svg',
             sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any'
+            type: 'image/svg+xml',
+            purpose: 'any maskable'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'icon.svg',
             sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable'
+            type: 'image/svg+xml',
+            purpose: 'any maskable'
           }
         ]
       },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        navigateFallbackDenylist: [/^\/api\//, /chrome-extension/],
-        ignoreURLParametersMatching: [/^utm_/, /^fbclid$/],
-        exclude: [/chrome-extension/, /extension/],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'firestore-cache',
-              networkTimeoutSeconds: 10,
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 // 24 horas
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          }
-        ]
+      devOptions: {
+        enabled: true,
+        type: 'module'
       }
     })
   ]

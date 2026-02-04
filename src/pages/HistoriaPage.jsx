@@ -9,11 +9,14 @@ import { pageVariants, storyParagraphVariants, buttonVariants, modalOverlayVaria
 import DOMPurify from 'dompurify';
 import { pdfExporter } from '../utils/pdfExporter';
 
+
 const HistoriaPage = () => {
   const { user } = useAuth();
   const { currentTrip, events, expenses, participants, participantsData } = useTrip();
   const [copied, setCopied] = useState(false);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [manualStory, setManualStory] = useState("");
 
   // Função para exportar PDF
   const handleExportPDF = async () => {
@@ -55,6 +58,11 @@ const HistoriaPage = () => {
   // Gera a história da viagem
   const tripStory = useMemo(() => {
     if (!currentTrip || events.length === 0) return null;
+
+    // Se o usuário editou manualmente, prioriza o texto manual
+    if (manualStory) {
+      return { text: manualStory };
+    }
 
     // Filtra eventos que estão dentro do período da viagem
     let filteredEvents = events;
@@ -150,60 +158,52 @@ const HistoriaPage = () => {
 
     const categoryLabels = {
       aereo: 'passagens aéreas',
-      transfer: 'transfers',
       hospedagem: 'hospedagem',
-      passeios: 'passeios',
       alimentacao: 'alimentação',
-      outros: 'outros gastos'
+      passeio: 'passeios',
+      transfer: 'transporte',
+      outros: 'outros'
     };
 
-    // Gera texto da história
-    let story = '';
+    // Lista de participantes
+    const participantNames = participants
+      .map(id => participantsData[id]?.displayName || id.substring(0, 8))
+      .join(', ');
 
-    // Introdução
-    story += `# ${currentTrip.name || 'Nossa Viagem Inesquecível'}\n\n`;
+    // Gera a história
+    let story = `# ${currentTrip.name}\n\n`;
     story += `## Uma Aventura de ${tripDuration} ${tripDuration === 1 ? 'Dia' : 'Dias'}\n\n`;
     story += `Entre ${format(firstDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })} e ${format(lastDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}, `;
-    
-    // Lista de participantes com nomes
-    const participantNames = participants.map(id => participantsData[id]?.displayName || id.substring(0, 8));
-    if (participantNames.length === 1) {
-      story += `${participantNames[0]} embarcou `;
-    } else if (participantNames.length === 2) {
-      story += `${participantNames[0]} e ${participantNames[1]} embarcaram `;
-    } else {
-      const lastPerson = participantNames.pop();
-      story += `${participantNames.join(', ')} e ${lastPerson} embarcaram `;
-    }
-    
-    story += `em uma jornada memorável. `;
+    story += `${participantNames || 'nós'} embarcamos em uma jornada memorável${participants.length > 0 ? ' com ' + participants.length + (participants.length === 1 ? ' pessoa' : ' pessoas') : ''}. `;
     story += `Esta é a história de como criamos memórias que vão durar para sempre.\n\n`;
 
-    // Seção do roteiro
     story += `## 🗺️ Nosso Roteiro\n\n`;
 
+    // Eventos de voo
     if (eventsByType.voo && eventsByType.voo.length > 0) {
       story += `### Voando Alto\n\n`;
-      story += `Nossa aventura começou ${eventsByType.voo.length === 1 ? 'com um voo' : `com ${eventsByType.voo.length} voos`}, `;
+      story += `Nossa aventura começou com ${eventsByType.voo.length} ${eventsByType.voo.length === 1 ? 'voo' : 'voos'}, `;
       story += `levando-nos através dos céus rumo ao destino dos nossos sonhos. `;
-      eventsByType.voo.slice(0, 2).forEach(event => {
-        story += `${event.title}${event.location ? ` em ${event.location}` : ''}. `;
+      eventsByType.voo.forEach((event, index) => {
+        story += `${event.title}`;
+        if (event.location) story += ` em ${event.location}`;
+        if (index < eventsByType.voo.length - 1) story += '. ';
       });
-      story += `\n\n`;
+      story += `.\n\n`;
     }
 
+    // Eventos de hospedagem
     if (eventsByType.hospedagem && eventsByType.hospedagem.length > 0) {
+      const hosp = eventsByType.hospedagem[0];
       story += `### Onde Ficamos\n\n`;
-      const accommodation = eventsByType.hospedagem[0];
-      story += `Encontramos nosso lar longe de casa em ${accommodation.title}`;
-      if (accommodation.location) story += ` (${accommodation.location})`;
+      story += `Encontramos nosso lar longe de casa em **${hosp.title}**`;
+      if (hosp.location) story += ` (${hosp.location})`;
       story += `. `;
-      if (accommodation.description) {
-        story += `${accommodation.description} `;
-      }
+      if (hosp.description) story += `${hosp.description}. `;
       story += `Foi o lugar perfeito para descansar entre as aventuras.\n\n`;
     }
 
+    // Eventos de passeio
     if (eventsByType.passeio && eventsByType.passeio.length > 0) {
       story += `### Explorando o Destino\n\n`;
       story += `Vivemos ${eventsByType.passeio.length} ${eventsByType.passeio.length === 1 ? 'experiência incrível' : 'experiências incríveis'}:\n\n`;
@@ -216,6 +216,7 @@ const HistoriaPage = () => {
       story += `\n`;
     }
 
+    // Eventos de alimentação
     if (eventsByType.alimentacao && eventsByType.alimentacao.length > 0) {
       story += `### Sabores da Viagem\n\n`;
       story += `A gastronomia foi parte essencial da nossa experiência. `;
@@ -299,12 +300,12 @@ const HistoriaPage = () => {
     story += `---\n\n`;
     story += `*História gerada automaticamente em ${format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}*\n`;
 
-    return story;
+    return { text: story };
   }, [currentTrip, currentTrip?.startDate, currentTrip?.endDate, events, expenses, participants, participantsData]);
 
   const handleCopy = async () => {
     if (tripStory) {
-      await navigator.clipboard.writeText(tripStory);
+      await navigator.clipboard.writeText(tripStory.text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -312,7 +313,7 @@ const HistoriaPage = () => {
 
   const handleDownload = () => {
     if (tripStory) {
-      const blob = new Blob([tripStory], { type: 'text/markdown' });
+      const blob = new Blob([tripStory.text], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -327,7 +328,7 @@ const HistoriaPage = () => {
   const handleSaveAsText = () => {
     if (tripStory) {
       // Remove markdown formatting para texto puro
-      const plainText = tripStory
+      const plainText = tripStory.text
         .replace(/^#+ /gm, '')
         .replace(/\*\*(.+?)\*\*/g, '$1')
         .replace(/\*(.+?)\*/g, '$1')
@@ -358,9 +359,11 @@ const HistoriaPage = () => {
   };
 
   // Preview da história em HTML com animação
-  const renderStory = (markdown) => {
+  const renderStory = (storyObj) => {
+    if (!storyObj || !storyObj.text) return [];
+    
     // Divide o markdown em seções (por títulos ##)
-    const sections = markdown.split(/^## /gm).filter(s => s.trim());
+    const sections = storyObj.text.split(/^## /gm).filter(s => s.trim());
     
     return sections.map((section, index) => {
       // Restaura o ## no início da seção
