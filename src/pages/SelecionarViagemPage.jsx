@@ -137,7 +137,7 @@ const SelecionarViagemPage = () => {
     const now = new Date();
     
     if (trip.status === 'archived') {
-      return { label: 'Arquivada', color: 'text-gray-500', icon: Archive };
+      return { label: 'Arquivada', color: 'text-sand-500', icon: Archive };
     }
     
     if (!trip.startDate || !trip.endDate) {
@@ -163,7 +163,7 @@ const SelecionarViagemPage = () => {
     if (isBefore(now, startDate)) {
       return { label: 'Futura', color: 'text-blue-500', icon: Clock };
     } else if (isAfter(now, endDate)) {
-      return { label: 'Finalizada', color: 'text-gray-500', icon: Check };
+      return { label: 'Finalizada', color: 'text-sand-500', icon: Check };
     } else {
       return { label: 'Em andamento', color: 'text-green-500', icon: Check };
     }
@@ -193,8 +193,8 @@ const SelecionarViagemPage = () => {
     >
       {/* Cabeçalho */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-slate-800 mb-2">Suas Viagens</h1>
-        <p className="text-slate-600">
+        <h1 className="text-3xl font-bold text-dark mb-2">Suas Viagens</h1>
+        <p className="text-dark-50">
           Gerencie suas viagens ou crie uma nova aventura
         </p>
       </div>
@@ -215,15 +215,15 @@ const SelecionarViagemPage = () => {
 
       {/* Lista de Viagens Ativas */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-slate-700">Viagens Ativas</h2>
+        <h2 className="text-xl font-semibold text-dark-100">Viagens Ativas</h2>
         
         {activeTrips.length === 0 ? (
           <motion.div
             variants={cardVariants}
-            className="bg-white rounded-2xl p-8 text-center border border-slate-200"
+            className="bg-white rounded-2xl p-8 text-center border border-sand-300"
           >
-            <MapPin className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-            <p className="text-slate-600">
+            <MapPin className="h-12 w-12 text-sand-500 mx-auto mb-4" />
+            <p className="text-dark-50">
               Você ainda não tem viagens ativas. Que tal criar sua primeira aventura?
             </p>
           </motion.div>
@@ -241,7 +241,7 @@ const SelecionarViagemPage = () => {
                   className={`bg-white rounded-2xl p-6 border-2 cursor-pointer transition-all ${
                     isSelected 
                       ? 'border-ocean shadow-lg' 
-                      : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
+                      : 'border-sand-300 hover:border-sand-400 hover:shadow-md'
                   }`}
                   onClick={() => !isSelected && handleSelectTrip(trip)}
                 >
@@ -262,10 +262,10 @@ const SelecionarViagemPage = () => {
                   {/* Informações da Viagem */}
                   <div className="space-y-3">
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-800 truncate">
+                      <h3 className="text-lg font-semibold text-dark truncate">
                         {trip.name}
                       </h3>
-                      <div className="flex items-center gap-2 text-slate-600 mt-1">
+                      <div className="flex items-center gap-2 text-dark-50 mt-1">
                         <MapPin className="h-4 w-4" />
                         <span className="text-sm truncate">{trip.destination}</span>
                       </div>
@@ -273,7 +273,7 @@ const SelecionarViagemPage = () => {
 
                     {/* Datas */}
                     {trip.startDate && trip.endDate && (
-                      <div className="flex items-center gap-2 text-slate-600">
+                      <div className="flex items-center gap-2 text-dark-50">
                         <Calendar className="h-4 w-4" />
                         <span className="text-sm">
                           {(() => {
@@ -293,7 +293,7 @@ const SelecionarViagemPage = () => {
                     )}
 
                     {/* Participantes e Transporte */}
-                    <div className="flex justify-between items-center text-sm text-slate-500">
+                    <div className="flex justify-between items-center text-sm text-sand-500">
                       <div className="flex items-center gap-1">
                         <Users className="h-4 w-4" />
                         <span>{trip.participants?.length || 1} participantes</span>
@@ -304,13 +304,13 @@ const SelecionarViagemPage = () => {
                   </div>
 
                   {/* Ações */}
-                  <div className="flex gap-2 mt-4 pt-4 border-t border-slate-100">
+                  <div className="flex gap-2 mt-4 pt-4 border-t border-sand-200">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleEditTrip(trip);
                       }}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-dark-50 hover:bg-sand-100 rounded-lg transition-colors"
                     >
                       <Edit2 className="h-4 w-4" />
                       <span className="text-sm">Editar</span>
@@ -326,7 +326,7 @@ const SelecionarViagemPage = () => {
       {/* Viagens Arquivadas */}
       {archivedTrips.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-slate-700">Viagens Arquivadas</h2>
+          <h2 className="text-xl font-semibold text-dark-100">Viagens Arquivadas</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {archivedTrips.map((trip) => {
               const TransportIcon = getTransportIcon(trip.transportType);
@@ -335,20 +335,20 @@ const SelecionarViagemPage = () => {
                 <motion.div
                   key={trip.id}
                   variants={cardVariants}
-                  className="bg-white rounded-2xl p-6 border border-slate-200 opacity-75"
+                  className="bg-white rounded-2xl p-6 border border-sand-300 opacity-75"
                 >
                   <div className="space-y-3">
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-600 truncate">
+                      <h3 className="text-lg font-semibold text-dark-50 truncate">
                         {trip.name}
                       </h3>
-                      <div className="flex items-center gap-2 text-slate-500 mt-1">
+                      <div className="flex items-center gap-2 text-sand-500 mt-1">
                         <MapPin className="h-4 w-4" />
                         <span className="text-sm truncate">{trip.destination}</span>
                       </div>
                     </div>
 
-                    <div className="flex justify-between items-center text-sm text-slate-400">
+                    <div className="flex justify-between items-center text-sm text-sand-500">
                       <div className="flex items-center gap-1">
                         <Users className="h-4 w-4" />
                         <span>{trip.participants?.length || 1} participantes</span>
@@ -390,7 +390,7 @@ const SelecionarViagemPage = () => {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-slate-800">
+                <h3 className="text-xl font-bold text-dark">
                   {editingTrip ? 'Editar Viagem' : 'Nova Viagem'}
                 </h3>
                 <button
@@ -399,7 +399,7 @@ const SelecionarViagemPage = () => {
                     setEditingTrip(null);
                     resetForm();
                   }}
-                  className="p-2 hover:bg-slate-100 rounded-lg"
+                  className="p-2 hover:bg-sand-200 rounded-lg"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -408,14 +408,14 @@ const SelecionarViagemPage = () => {
               <form onSubmit={editingTrip ? handleUpdateTrip : handleCreateTrip} className="space-y-4">
                 {/* Nome da Viagem */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-dark-100 mb-2">
                     Nome da Viagem *
                   </label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean"
+                    className="w-full px-4 py-3 border border-sand-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean"
                     placeholder="Ex: Férias em Gramado"
                     required
                   />
@@ -423,14 +423,14 @@ const SelecionarViagemPage = () => {
 
                 {/* Destino */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-dark-100 mb-2">
                     Destino *
                   </label>
                   <input
                     type="text"
                     value={formData.destination}
                     onChange={(e) => setFormData(prev => ({ ...prev, destination: e.target.value }))}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean"
+                    className="w-full px-4 py-3 border border-sand-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean"
                     placeholder="Ex: Gramado, RS"
                     required
                   />
@@ -439,33 +439,33 @@ const SelecionarViagemPage = () => {
                 {/* Datas */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <label className="block text-sm font-medium text-dark-100 mb-2">
                       Data de Início
                     </label>
                     <input
                       type="date"
                       value={formData.startDate}
                       onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean"
+                      className="w-full px-4 py-3 border border-sand-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <label className="block text-sm font-medium text-dark-100 mb-2">
                       Data de Fim
                     </label>
                     <input
                       type="date"
                       value={formData.endDate}
                       onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean"
+                      className="w-full px-4 py-3 border border-sand-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean"
                     />
                   </div>
                 </div>
 
                 {/* Tipo de Transporte */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-dark-100 mb-2">
                     Transporte Principal
                   </label>
                   <div className="grid grid-cols-2 gap-3">
@@ -475,7 +475,7 @@ const SelecionarViagemPage = () => {
                       className={`p-3 rounded-xl border-2 flex items-center justify-center gap-2 transition-colors ${
                         formData.transportType === 'car'
                           ? 'border-ocean bg-ocean/10 text-ocean'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                          : 'border-sand-300 text-dark-50 hover:border-sand-400'
                       }`}
                     >
                       <Car className="h-5 w-5" />
@@ -488,7 +488,7 @@ const SelecionarViagemPage = () => {
                       className={`p-3 rounded-xl border-2 flex items-center justify-center gap-2 transition-colors ${
                         formData.transportType === 'plane'
                           ? 'border-ocean bg-ocean/10 text-ocean'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                          : 'border-sand-300 text-dark-50 hover:border-sand-400'
                       }`}
                     >
                       <Plane className="h-5 w-5" />
@@ -499,14 +499,14 @@ const SelecionarViagemPage = () => {
 
                 {/* Descrição */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-dark-100 mb-2">
                     Descrição (opcional)
                   </label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                     rows={3}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean resize-none"
+                    className="w-full px-4 py-3 border border-sand-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean resize-none"
                     placeholder="Descreva sua viagem..."
                   />
                 </div>
@@ -520,7 +520,7 @@ const SelecionarViagemPage = () => {
                       setEditingTrip(null);
                       resetForm();
                     }}
-                    className="flex-1 px-4 py-3 border border-slate-200 text-slate-600 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
+                    className="flex-1 px-4 py-3 border border-sand-300 text-dark-50 rounded-xl font-semibold hover:bg-sand-100 transition-colors"
                   >
                     Cancelar
                   </button>

@@ -49,7 +49,7 @@ const GerenciarViagemPage = () => {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center py-12">
-          <p className="text-gray-400 text-lg">Nenhuma viagem selecionada</p>
+          <p className="text-sand-400 text-lg">Nenhuma viagem selecionada</p>
         </div>
       </div>
     );
@@ -283,14 +283,14 @@ const GerenciarViagemPage = () => {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6 p-4 bg-purple-600/20 border border-purple-500 rounded-lg"
+          className="mb-6 p-4 bg-aqua-600/20 border border-aqua-500 rounded-lg"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Archive className="w-5 h-5 text-purple-400" />
+              <Archive className="w-5 h-5 text-aqua-400" />
               <div>
-                <p className="text-purple-300 font-semibold">Visualizando viagem arquivada</p>
-                <p className="text-purple-400 text-sm">Esta viagem foi encerrada e está no modo somente leitura</p>
+                <p className="text-aqua-300 font-semibold">Visualizando viagem arquivada</p>
+                <p className="text-aqua-400 text-sm">Esta viagem foi encerrada e está no modo somente leitura</p>
               </div>
             </div>
             <button
@@ -305,7 +305,7 @@ const GerenciarViagemPage = () => {
                   setTimeout(() => setSuccess(''), 3000);
                 }
               }}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all"
+              className="px-4 py-2 bg-aqua-600 text-white rounded-lg hover:bg-aqua-700 transition-all"
             >
               Voltar para Viagem Ativa
             </button>
@@ -377,11 +377,11 @@ const GerenciarViagemPage = () => {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-gray-800 rounded-xl p-6 max-w-md w-full"
+              className="bg-ocean-800 rounded-xl p-6 max-w-md w-full"
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-2xl font-bold text-white mb-4">Encerrar Viagem?</h3>
-              <p className="text-gray-300 mb-6">
+              <p className="text-sand-300 mb-6">
                 Tem certeza que deseja encerrar "<strong>{currentTrip.name}</strong>"?
                 <br /><br />
                 A viagem será arquivada e você poderá:
@@ -392,7 +392,7 @@ const GerenciarViagemPage = () => {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowEndTripModal(false)}
-                  className="flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-all"
+                  className="flex-1 px-4 py-3 bg-ocean-700 text-white rounded-lg hover:bg-ocean-600 transition-all"
                   disabled={loading}
                 >
                   Cancelar
@@ -415,14 +415,14 @@ const GerenciarViagemPage = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-gray-800 rounded-xl p-6 shadow-lg mb-8"
+          className="bg-ocean-800 rounded-xl p-6 shadow-lg mb-8"
         >
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-purple-400" />
+              <Calendar className="w-6 h-6 text-aqua-400" />
               Histórico de Viagens
             </h2>
-            <span className="text-sm text-gray-400">
+            <span className="text-sm text-sand-400">
               {trips.filter(trip => trip.status === 'archived').length} {trips.filter(trip => trip.status === 'archived').length === 1 ? 'viagem' : 'viagens'} concluída{trips.filter(trip => trip.status === 'archived').length === 1 ? '' : 's'}
             </span>
           </div>
@@ -445,26 +445,26 @@ const GerenciarViagemPage = () => {
                     key={trip.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="bg-gray-700/50 rounded-lg p-4 border border-gray-600 hover:border-purple-500/50 transition-all"
+                    className="bg-ocean-700/50 rounded-lg p-4 border border-ocean-600 hover:border-aqua-500/50 transition-all"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <h3 className="text-lg font-semibold text-white mb-2">
                           {trip.name}
                         </h3>
-                        <div className="space-y-1 text-sm text-gray-400">
+                        <div className="space-y-1 text-sm text-sand-400">
                           <p className="flex items-center gap-2">
-                            <span className="text-purple-400">📍</span>
+                            <span className="text-aqua-400">📍</span>
                             {trip.destination || 'Destino não informado'}
                           </p>
                           <p className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-purple-400" />
+                            <Calendar className="w-4 h-4 text-aqua-400" />
                             {format(startDate, "d 'de' MMMM", { locale: ptBR })}
                             {' → '}
                             {format(endDate, "d 'de' MMMM, yyyy", { locale: ptBR })}
                           </p>
                           <p className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-purple-400" />
+                            <Users className="w-4 h-4 text-aqua-400" />
                             {participantCount} {participantCount === 1 ? 'participante' : 'participantes'}
                           </p>
                         </div>
@@ -477,7 +477,7 @@ const GerenciarViagemPage = () => {
                             setSuccess('Visualizando viagem arquivada');
                             setTimeout(() => setSuccess(''), 3000);
                           }}
-                          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all flex items-center gap-2 whitespace-nowrap"
+                          className="px-4 py-2 bg-aqua-600 text-white rounded-lg hover:bg-aqua-700 transition-all flex items-center gap-2 whitespace-nowrap"
                         >
                           <Eye className="w-4 h-4" />
                           Abrir
@@ -517,13 +517,13 @@ const GerenciarViagemPage = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gray-800 rounded-xl p-6 shadow-lg mb-8"
+        className="bg-ocean-800 rounded-xl p-6 shadow-lg mb-8"
       >
         <h2 className="text-2xl font-bold text-white mb-6">Detalhes da Viagem</h2>
 
         {/* Seu Nome */}
-        <div className="mb-6 p-4 bg-purple-900/20 border border-purple-500/30 rounded-lg">
-          <label className="block text-sm font-medium text-purple-300 mb-2">
+        <div className="mb-6 p-4 bg-ocean-900/20 border border-aqua-500/30 rounded-lg">
+          <label className="block text-sm font-medium text-aqua-300 mb-2">
             Seu Nome
           </label>
           {isEditingUserName ? (
@@ -533,7 +533,7 @@ const GerenciarViagemPage = () => {
                 value={editedUserName}
                 onChange={(e) => setEditedUserName(e.target.value)}
                 placeholder="Digite seu nome completo"
-                className="flex-1 px-4 py-2 bg-gray-700 border border-purple-500 rounded-lg text-white focus:outline-none focus:border-purple-400"
+                className="flex-1 px-4 py-2 bg-ocean-700 border border-aqua-500 rounded-lg text-white focus:outline-none focus:border-aqua-400"
                 disabled={loading}
               />
               <button
@@ -549,13 +549,13 @@ const GerenciarViagemPage = () => {
                   setEditedUserName(user?.displayName || '');
                 }}
                 disabled={loading}
-                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                className="p-2 bg-ocean-600 text-white rounded-lg hover:bg-ocean-700"
               >
                 <X size={20} />
               </button>
             </div>
           ) : (
-            <div className="flex items-center justify-between px-4 py-2 bg-gray-700 rounded-lg">
+            <div className="flex items-center justify-between px-4 py-2 bg-ocean-700 rounded-lg">
               <span className="text-white">
                 {participantsData[user?.uid]?.displayName || user?.displayName || user?.email?.split('@')[0] || 'Não definido'}
               </span>
@@ -565,20 +565,20 @@ const GerenciarViagemPage = () => {
                     setIsEditingUserName(true);
                     setEditedUserName(participantsData[user?.uid]?.displayName || user?.displayName || '');
                   }}
-                  className="p-2 text-purple-400 hover:text-purple-300"
+                  className="p-2 text-aqua-400 hover:text-aqua-300"
                 >
                   <Edit2 size={18} />
                 </button>
               )}
             </div>
           )}
-          <p className="text-xs text-purple-300 mt-2">Este nome aparecerá para todos os participantes</p>
+          <p className="text-xs text-aqua-300 mt-2">Este nome aparecerá para todos os participantes</p>
         </div>
 
         {/* Nome da Viagem */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Nome da Viagem {isViewingArchived && <span className="text-purple-400 text-xs">(somente leitura)</span>}
+          <label className="block text-sm font-medium text-sand-300 mb-2">
+            Nome da Viagem {isViewingArchived && <span className="text-aqua-400 text-xs">(somente leitura)</span>}
           </label>
           {isEditingName && !isViewingArchived ? (
             <div className="flex gap-2">
@@ -586,7 +586,7 @@ const GerenciarViagemPage = () => {
                 type="text"
                 value={editedName}
                 onChange={(e) => setEditedName(e.target.value)}
-                className="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                className="flex-1 px-4 py-2 bg-ocean-700 border border-ocean-600 rounded-lg text-white focus:outline-none focus:border-aqua-500"
                 disabled={loading}
               />
               <button
@@ -602,18 +602,18 @@ const GerenciarViagemPage = () => {
                   setEditedName(currentTrip.name);
                 }}
                 disabled={loading}
-                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                className="p-2 bg-ocean-600 text-white rounded-lg hover:bg-ocean-700"
               >
                 <X size={20} />
               </button>
             </div>
           ) : (
-            <div className="flex items-center justify-between px-4 py-2 bg-gray-700 rounded-lg">
+            <div className="flex items-center justify-between px-4 py-2 bg-ocean-700 rounded-lg">
               <span className="text-white">{currentTrip.name}</span>
               {!isViewingArchived && (
                 <button
                   onClick={() => setIsEditingName(true)}
-                  className="p-2 text-purple-400 hover:text-purple-300"
+                  className="p-2 text-aqua-400 hover:text-aqua-300"
                 >
                   <Edit2 size={18} />
                 </button>
@@ -624,8 +624,8 @@ const GerenciarViagemPage = () => {
 
         {/* Destino */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Destino {isViewingArchived && <span className="text-purple-400 text-xs">(somente leitura)</span>}
+          <label className="block text-sm font-medium text-sand-300 mb-2">
+            Destino {isViewingArchived && <span className="text-aqua-400 text-xs">(somente leitura)</span>}
           </label>
           {isEditingDestination && !isViewingArchived ? (
             <div className="flex gap-2">
@@ -633,7 +633,7 @@ const GerenciarViagemPage = () => {
                 type="text"
                 value={editedDestination}
                 onChange={(e) => setEditedDestination(e.target.value)}
-                className="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                className="flex-1 px-4 py-2 bg-ocean-700 border border-ocean-600 rounded-lg text-white focus:outline-none focus:border-aqua-500"
                 disabled={loading}
               />
               <button
@@ -649,18 +649,18 @@ const GerenciarViagemPage = () => {
                   setEditedDestination(currentTrip.destination);
                 }}
                 disabled={loading}
-                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                className="p-2 bg-ocean-600 text-white rounded-lg hover:bg-ocean-700"
               >
                 <X size={20} />
               </button>
             </div>
           ) : (
-            <div className="flex items-center justify-between px-4 py-2 bg-gray-700 rounded-lg">
+            <div className="flex items-center justify-between px-4 py-2 bg-ocean-700 rounded-lg">
               <span className="text-white">{currentTrip.destination || 'Não especificado'}</span>
               {!isViewingArchived && (
                 <button
                   onClick={() => setIsEditingDestination(true)}
-                  className="p-2 text-purple-400 hover:text-purple-300"
+                  className="p-2 text-aqua-400 hover:text-aqua-300"
                 >
                   <Edit2 size={18} />
                 </button>
@@ -671,29 +671,29 @@ const GerenciarViagemPage = () => {
 
         {/* Período da Viagem (datas) */}
         <div className="mb-2">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Período da Viagem {isViewingArchived && <span className="text-purple-400 text-xs">(somente leitura)</span>}
+          <label className="block text-sm font-medium text-sand-300 mb-2">
+            Período da Viagem {isViewingArchived && <span className="text-aqua-400 text-xs">(somente leitura)</span>}
           </label>
           {isEditingDates && !isViewingArchived ? (
             <div className="space-y-2">
               <div className="flex flex-col sm:flex-row gap-2">
                 <div className="flex-1">
-                  <span className="block text-xs text-gray-400 mb-1">Início</span>
+                  <span className="block text-xs text-sand-400 mb-1">Início</span>
                   <input
                     type="date"
                     value={editedStartDate}
                     onChange={(e) => setEditedStartDate(e.target.value)}
-                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                    className="w-full px-4 py-2 bg-ocean-700 border border-ocean-600 rounded-lg text-white focus:outline-none focus:border-aqua-500"
                     disabled={loading}
                   />
                 </div>
                 <div className="flex-1">
-                  <span className="block text-xs text-gray-400 mb-1">Término</span>
+                  <span className="block text-xs text-sand-400 mb-1">Término</span>
                   <input
                     type="date"
                     value={editedEndDate}
                     onChange={(e) => setEditedEndDate(e.target.value)}
-                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                    className="w-full px-4 py-2 bg-ocean-700 border border-ocean-600 rounded-lg text-white focus:outline-none focus:border-aqua-500"
                     disabled={loading}
                   />
                 </div>
@@ -713,7 +713,7 @@ const GerenciarViagemPage = () => {
                     setEditedEndDate(currentTrip.endDate || '');
                   }}
                   disabled={loading}
-                  className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                  className="p-2 bg-ocean-600 text-white rounded-lg hover:bg-ocean-700"
                 >
                   <X size={20} />
                 </button>
@@ -721,9 +721,9 @@ const GerenciarViagemPage = () => {
               <p className="text-xs text-orange-300/90">Atenção: alterar as datas muda o período do roteiro.</p>
             </div>
           ) : (
-            <div className="flex items-center justify-between px-4 py-2 bg-gray-700 rounded-lg">
+            <div className="flex items-center justify-between px-4 py-2 bg-ocean-700 rounded-lg">
               <span className="text-white flex items-center gap-2">
-                <Calendar size={16} className="text-gray-400" />
+                <Calendar size={16} className="text-sand-400" />
                 {currentTrip.startDate && currentTrip.endDate
                   ? `${formatTripDate(currentTrip.startDate)} a ${formatTripDate(currentTrip.endDate)}`
                   : 'Datas não definidas'}
@@ -735,7 +735,7 @@ const GerenciarViagemPage = () => {
                     setEditedStartDate(currentTrip.startDate || '');
                     setEditedEndDate(currentTrip.endDate || '');
                   }}
-                  className="p-2 text-purple-400 hover:text-purple-300"
+                  className="p-2 text-aqua-400 hover:text-aqua-300"
                 >
                   <Edit2 size={18} />
                 </button>
@@ -759,7 +759,7 @@ const GerenciarViagemPage = () => {
                 <Trash2 className="w-5 h-5" />
                 Zona de Perigo
               </h3>
-              <p className="text-gray-300 text-sm mb-1">
+              <p className="text-sand-300 text-sm mb-1">
                 Excluir permanentemente esta viagem e todos os dados relacionados.
               </p>
               <p className="text-red-400 text-xs">
@@ -782,18 +782,18 @@ const GerenciarViagemPage = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-gray-800 rounded-xl p-6 shadow-lg"
+        className="bg-ocean-800 rounded-xl p-6 shadow-lg"
       >
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Users className="text-purple-400" />
+            <Users className="text-aqua-400" />
             Participantes ({(currentTrip.participants?.length || 0) + (currentTrip.pendingParticipants?.length || 0)})
-            {isViewingArchived && <span className="text-purple-400 text-xs ml-2">(somente leitura)</span>}
+            {isViewingArchived && <span className="text-aqua-400 text-xs ml-2">(somente leitura)</span>}
           </h2>
           {!isViewingArchived && (
             <button
               onClick={() => setShowAddParticipant(!showAddParticipant)}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+              className="px-4 py-2 bg-aqua-600 text-white rounded-lg hover:bg-aqua-700 flex items-center gap-2"
             >
               <Mail size={18} />
               Adicionar por E-mail
@@ -808,9 +808,9 @@ const GerenciarViagemPage = () => {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             onSubmit={handleAddParticipant}
-            className="mb-6 p-4 bg-gray-700 rounded-lg"
+            className="mb-6 p-4 bg-ocean-700 rounded-lg"
           >
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-sand-300 mb-2">
               E-mail do Participante
             </label>
             <div className="flex gap-2">
@@ -819,14 +819,14 @@ const GerenciarViagemPage = () => {
                 value={participantEmail}
                 onChange={(e) => setParticipantEmail(e.target.value)}
                 placeholder="usuario@email.com"
-                className="flex-1 px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                className="flex-1 px-4 py-2 bg-ocean-800 border border-ocean-600 rounded-lg text-white focus:outline-none focus:border-aqua-500"
                 disabled={loading}
                 required
               />
               <button
                 type="submit"
                 disabled={loading || !participantEmail.trim()}
-                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2 bg-aqua-600 text-white rounded-lg hover:bg-aqua-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Adicionando...' : 'Adicionar'}
               </button>
@@ -858,10 +858,10 @@ const GerenciarViagemPage = () => {
                 key={participantId}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="flex items-center justify-between p-4 bg-gray-700 rounded-lg"
+                className="flex items-center justify-between p-4 bg-ocean-700 rounded-lg"
               >
                 <div className="flex items-center gap-3 flex-1">
-                  <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                  <div className="w-10 h-10 bg-aqua-600 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
                     {editingParticipantId === participantId ? editingParticipantName.charAt(0).toUpperCase() : displayName.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -871,7 +871,7 @@ const GerenciarViagemPage = () => {
                           type="text"
                           value={editingParticipantName}
                           onChange={(e) => setEditingParticipantName(e.target.value)}
-                          className="flex-1 px-2 py-1 bg-gray-600 border border-purple-500 rounded text-white text-sm focus:outline-none focus:border-purple-400"
+                          className="flex-1 px-2 py-1 bg-ocean-600 border border-aqua-500 rounded text-white text-sm focus:outline-none focus:border-aqua-400"
                           autoFocus
                           disabled={loading}
                         />
@@ -889,7 +889,7 @@ const GerenciarViagemPage = () => {
                             setEditingParticipantName('');
                           }}
                           disabled={loading}
-                          className="p-1 bg-gray-600 text-white rounded hover:bg-gray-500 disabled:opacity-50 flex-shrink-0"
+                          className="p-1 bg-ocean-600 text-white rounded hover:bg-sand-500 disabled:opacity-50 flex-shrink-0"
                           title="Cancelar"
                         >
                           <X size={16} />
@@ -900,7 +900,7 @@ const GerenciarViagemPage = () => {
                         <p className="text-white font-medium flex items-center gap-2 flex-wrap">
                           {displayName}
                           {isCreator && (
-                            <span className="text-xs px-2 py-1 bg-purple-600 rounded-full">
+                            <span className="text-xs px-2 py-1 bg-aqua-600 rounded-full">
                               Criador
                             </span>
                           )}
@@ -910,7 +910,7 @@ const GerenciarViagemPage = () => {
                             </span>
                           )}
                         </p>
-                        <p className="text-gray-400 text-sm">
+                        <p className="text-sand-400 text-sm">
                           {participant?.email || 'E-mail não disponível'}
                         </p>
                       </>
@@ -924,7 +924,7 @@ const GerenciarViagemPage = () => {
                       <button
                         onClick={() => handleEditParticipantName(participantId)}
                         disabled={loading}
-                        className="p-2 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-2 text-aqua-400 hover:text-aqua-300 hover:bg-aqua-500/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Editar nome"
                       >
                         <Edit2 size={18} />
@@ -948,7 +948,7 @@ const GerenciarViagemPage = () => {
         </div>
 
         {currentTrip.participants?.length === 0 && (
-          <div className="text-center py-8 text-gray-400">
+          <div className="text-center py-8 text-sand-400">
             Nenhum participante ainda. Adicione pessoas para começar!
           </div>
         )}
@@ -956,7 +956,7 @@ const GerenciarViagemPage = () => {
         {/* Participantes Pendentes */}
         {currentTrip.pendingParticipants && currentTrip.pendingParticipants.length > 0 && (
           <div className="mt-8">
-            <h3 className="text-lg font-semibold text-gray-300 mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-sand-300 mb-4 flex items-center gap-2">
               <Mail className="w-5 h-5 text-orange-400" />
               Convites Pendentes ({currentTrip.pendingParticipants.length})
             </h3>
@@ -1026,7 +1026,7 @@ const GerenciarViagemPage = () => {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-xl"
+            className="bg-ocean-800 rounded-xl max-w-md w-full p-6 shadow-xl"
           >
             <div className="text-center mb-6">
               <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1035,7 +1035,7 @@ const GerenciarViagemPage = () => {
               <h3 className="text-2xl font-bold text-white mb-2">
                 Excluir Viagem?
               </h3>
-              <p className="text-gray-300 mb-4">
+              <p className="text-sand-300 mb-4">
                 Tem certeza que deseja excluir permanentemente a viagem <strong>"{currentTrip.name}"</strong>?
               </p>
               <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-4 mb-4">
@@ -1058,7 +1058,7 @@ const GerenciarViagemPage = () => {
               <button
                 onClick={() => setShowDeleteModal(false)}
                 disabled={loading}
-                className="flex-1 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-ocean-700 text-white rounded-lg hover:bg-ocean-600 disabled:opacity-50"
               >
                 Cancelar
               </button>

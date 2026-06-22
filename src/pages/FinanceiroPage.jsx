@@ -867,7 +867,7 @@ const FinanceiroPage = () => {
                     ))}
                   </select>
                 ) : (
-                  <div className="input bg-gray-100 text-gray-600 cursor-not-allowed">
+                  <div className="input bg-sand-200 text-sand-500 cursor-not-allowed">
                     Nenhum participante na viagem
                   </div>
                 )}
