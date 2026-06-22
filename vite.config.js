@@ -12,7 +12,7 @@ export default defineConfig({
       filename: 'service-worker.js',
       registerType: 'prompt',
       injectRegister: false,
-      includeAssets: ['icon-192.svg', 'icon.svg'],
+      includeAssets: ['icon-192.svg', 'icon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
         name: 'Viagem Colaborativa',
         short_name: 'Viagem',
@@ -25,16 +25,22 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
-            src: 'icon-192.svg',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
+            type: 'image/png',
+            purpose: 'any'
           },
           {
-            src: 'icon.svg',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       },
@@ -43,5 +49,14 @@ export default defineConfig({
         type: 'module'
       }
     })
-  ]
+  ],
+  build: {
+    // Remove logs de debug do bundle de producao (mantem console.error/warn)
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        pure_funcs: ['console.log', 'console.debug', 'console.info'],
+      },
+    },
+  },
 })

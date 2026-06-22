@@ -1,7 +1,7 @@
 // Configuração do Firebase
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 
 // Validação de ambiente
 const isProduction = import.meta.env.PROD;
@@ -29,18 +29,12 @@ if (!USE_MOCK_DATA && isConfigValid) {
   try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
 
-    // Habilitar persistência offline (IndexedDB)
-    if (typeof window !== 'undefined' && db) {
-      enableIndexedDbPersistence(db).catch((err) => {
-        if (err.code === 'failed-precondition') {
-          // Múltiplas abas abertas, persistência só funciona em uma aba
-        } else if (err.code === 'unimplemented') {
-          // Navegador não suporta persistência
-        }
-      });
-    }
+    // Cache persistente (IndexedDB) com suporte a múltiplas abas.
+    // Substitui enableIndexedDbPersistence (deprecado no SDK 10).
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    });
   } catch (error) {
     // Silenciosamente falha se Firebase não inicializar
   }

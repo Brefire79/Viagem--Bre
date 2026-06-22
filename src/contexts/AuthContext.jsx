@@ -9,6 +9,24 @@ import {
 import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
+// Traduz os códigos de erro do Firebase Auth para mensagens claras em português.
+const authErrorMessages = {
+  'auth/invalid-credential': 'E-mail ou senha incorretos.',
+  'auth/invalid-email': 'Esse e-mail não parece válido.',
+  'auth/user-disabled': 'Esta conta foi desativada.',
+  'auth/user-not-found': 'Não encontramos uma conta com esse e-mail.',
+  'auth/wrong-password': 'E-mail ou senha incorretos.',
+  'auth/email-already-in-use': 'Este e-mail já está cadastrado.',
+  'auth/weak-password': 'A senha precisa ter ao menos 6 caracteres.',
+  'auth/missing-password': 'Digite sua senha.',
+  'auth/too-many-requests': 'Muitas tentativas seguidas. Espere um pouco e tente de novo.',
+  'auth/network-request-failed': 'Sem conexão. Verifique sua internet e tente de novo.',
+  'auth/operation-not-allowed': 'Esse método de login está desativado.'
+};
+
+const getAuthErrorMessage = (error) =>
+  authErrorMessages[error?.code] || 'Não foi possível concluir. Tente de novo em instantes.';
+
 // Contexto de autenticação
 const AuthContext = createContext({});
 
@@ -62,34 +80,26 @@ export const AuthProvider = ({ children }) => {
       } catch (firestoreError) {
         console.warn('[WARN] Erro ao atualizar perfil no login:', firestoreError);
       }
-      
-      console.log('[DEBUG] Login bem-sucedido, verificando convites pendentes...');
-      
+
       // Verificar se este email tem convites pendentes (para usuários já criados)
       const tripsRef = collection(db, 'trips');
       const q = query(tripsRef, where('pendingParticipants', 'array-contains', email.toLowerCase().trim()));
       const querySnapshot = await getDocs(q);
 
-      console.log('[DEBUG] Convites pendentes encontrados no login:', querySnapshot.size);
-
       // Ativar participação em viagens pendentes
       for (const tripDoc of querySnapshot.docs) {
-        console.log('[DEBUG] Ativando participação na viagem:', tripDoc.id);
         const tripRef = doc(db, 'trips', tripDoc.id);
-        
         await updateDoc(tripRef, {
           participants: arrayUnion(result.user.uid),
           pendingParticipants: arrayRemove(email.toLowerCase().trim()),
           updatedAt: serverTimestamp()
         });
-        
-        console.log('[DEBUG] Participação ativada no login!');
       }
-      
+
       return { success: true, user: result.user };
     } catch (error) {
       console.error('[ERROR] Erro no login:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: getAuthErrorMessage(error) };
     }
   };
 
@@ -117,34 +127,26 @@ export const AuthProvider = ({ children }) => {
         trips: []
       });
 
-      console.log('[DEBUG] Usuário criado, verificando convites pendentes...');
-      
       // Verificar se este email tem convites pendentes em alguma viagem
       const tripsRef = collection(db, 'trips');
       const q = query(tripsRef, where('pendingParticipants', 'array-contains', email.toLowerCase().trim()));
       const querySnapshot = await getDocs(q);
 
-      console.log('[DEBUG] Convites encontrados:', querySnapshot.size);
-
       // Para cada viagem que tem este email como pendente
       for (const tripDoc of querySnapshot.docs) {
-        console.log('[DEBUG] Ativando participação na viagem:', tripDoc.id);
         const tripRef = doc(db, 'trips', tripDoc.id);
-        
         // Adicionar o UID aos participants e remover o email dos pendentes
         await updateDoc(tripRef, {
           participants: arrayUnion(result.user.uid),
           pendingParticipants: arrayRemove(email.toLowerCase().trim()),
           updatedAt: serverTimestamp()
         });
-        
-        console.log('[DEBUG] Participação ativada com sucesso!');
       }
-      
+
       return { success: true, user: result.user };
     } catch (error) {
       console.error('[ERROR] Erro no registro:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: getAuthErrorMessage(error) };
     }
   };
 
@@ -179,11 +181,10 @@ export const AuthProvider = ({ children }) => {
         displayName: newDisplayName
       }, { merge: true });
 
-      console.log('[DEBUG] Nome atualizado para:', newDisplayName);
       return { success: true };
     } catch (error) {
       console.error('[ERROR] Erro ao atualizar nome:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: getAuthErrorMessage(error) };
     }
   };
 

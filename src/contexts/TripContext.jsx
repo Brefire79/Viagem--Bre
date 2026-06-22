@@ -148,7 +148,7 @@ export const TripProvider = ({ children }) => {
             data[uid] = userData;
             console.log(`[DEBUG] Participante carregado:`, uid, userData.displayName);
           } else {
-            console.warn(`[DEBUG] Usuário ${uid} não encontrado no Firestore, criando documento...`);
+            console.warn('Usuário não encontrado no Firestore; criando documento...');
             // Se não existe, tentar buscar do Auth e criar
             const displayName = uid.substring(0, 8) + '...';
             data[uid] = {

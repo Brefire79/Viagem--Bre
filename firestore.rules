@@ -1,65 +1,88 @@
 rules_version = '2';
 
+// =============================================================================
+// NOTA DE SEGURANCA (v1 - uso familiar/pequeno):
+// A regra `isPendingInvite` usada em `match /trips/{tripId} -> allow update`
+// e necessaria porque, em src/contexts/AuthContext.jsx, o usuario se
+// auto-adiciona ao array `participants` ao logar/registrar com um convite
+// pendente. Porem, do jeito atual, ela permite que um convidado pendente
+// faca QUALQUER update na trip - nao apenas aceitar o convite.
+// Para uso familiar/pequeno isto e aceitavel como v1.
+// A medio prazo, a aceitacao de convite deve migrar para uma Cloud Function.
+// =============================================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Função para verificar se o usuário está autenticado
+
     function isSignedIn() {
       return request.auth != null;
     }
-    
-    // Permitir acesso para usuários autenticados (desenvolvimento)
-    match /{document=**} {
-      allow read, write: if isSignedIn();
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
-  }
-}
-                       // Não permitir remover o criador
-                       resource.data.createdBy in request.resource.data.participants;
-      
-      // Permitir deletar apenas para o criador
+
+    function tripData(tripId) {
+      return get(/databases/$(database)/documents/trips/$(tripId)).data;
+    }
+
+    function isParticipant(tripId) {
+      return isSignedIn() && request.auth.uid in tripData(tripId).participants;
+    }
+
+    // ===== USERS =====
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isOwner(userId);
+    }
+
+    // ===== TRIPS =====
+    match /trips/{tripId} {
+      // Convidado pendente identificado pelo e-mail do token de auth
+      function isPendingInvite() {
+        return isSignedIn() &&
+               request.auth.token.email != null &&
+               request.auth.token.email.lower() in resource.data.get('pendingParticipants', []);
+      }
+
+      allow read: if isParticipant(tripId) || isPendingInvite();
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == request.resource.data.createdBy &&
+                       request.auth.uid in request.resource.data.participants;
+
+      // Participante pode atualizar, desde que NAO remova o criador da lista.
+      // Convidado pendente pode atualizar para aceitar o convite (ver NOTA acima).
+      allow update: if (isParticipant(tripId) &&
+                        resource.data.createdBy in request.resource.data.participants)
+                       || isPendingInvite();
+
       allow delete: if isOwner(resource.data.createdBy);
     }
-    
-    // REGRAS PARA EVENTOS
+
+    // ===== EVENTS =====
     match /events/{eventId} {
-      // Permitir leitura para participantes da viagem
       allow read: if isParticipant(resource.data.tripId);
-      
-      // Permitir criar para participantes da viagem
-      allow create: if isSignedIn() && 
+      allow create: if isSignedIn() &&
                        isParticipant(request.resource.data.tripId) &&
                        request.auth.uid == request.resource.data.createdBy;
-      
-      // Permitir atualizar apenas para o criador ou participantes
       allow update: if isParticipant(resource.data.tripId);
-      
-      // Permitir deletar apenas para o criador do evento
       allow delete: if isOwner(resource.data.createdBy);
     }
-    
-    // REGRAS PARA DESPESAS
+
+    // ===== EXPENSES =====
     match /expenses/{expenseId} {
-      // Permitir leitura para participantes da viagem
       allow read: if isParticipant(resource.data.tripId);
-      
-      // Permitir criar para participantes da viagem
-      allow create: if isSignedIn() && 
+      allow create: if isSignedIn() &&
                        isParticipant(request.resource.data.tripId) &&
-                       // Validar que paidBy é um participante
-                       request.resource.data.paidBy in get(/databases/$(database)/documents/trips/$(request.resource.data.tripId)).data.participants &&
-                       // Validar que amount é positivo
+                       request.resource.data.paidBy in tripData(request.resource.data.tripId).participants &&
                        request.resource.data.amount > 0;
-      
-      // Permitir atualizar para participantes da viagem
       allow update: if isParticipant(resource.data.tripId) &&
                        request.resource.data.amount > 0;
-      
-      // Permitir deletar para participantes da viagem
       allow delete: if isParticipant(resource.data.tripId);
     }
-    
-    // Bloquear acesso a qualquer outra coleção
+
+    // Bloquear qualquer outra coleccao
     match /{document=**} {
       allow read, write: if false;
     }
