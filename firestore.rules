@@ -38,6 +38,12 @@ service cloud.firestore {
 
     // ===== TRIPS =====
     match /trips/{tripId} {
+      // IMPORTANTE: para a propria colecao trips usamos resource.data DIRETO
+      // (nao get()). get() do mesmo documento quebra queries de lista (list),
+      // causando "Missing or insufficient permissions" na listagem de viagens.
+      function isTripParticipant() {
+        return isSignedIn() && request.auth.uid in resource.data.get('participants', []);
+      }
       // Convidado pendente identificado pelo e-mail do token de auth
       function isPendingInvite() {
         return isSignedIn() &&
@@ -45,7 +51,7 @@ service cloud.firestore {
                request.auth.token.email.lower() in resource.data.get('pendingParticipants', []);
       }
 
-      allow read: if isParticipant(tripId) || isPendingInvite();
+      allow read: if isTripParticipant() || isPendingInvite();
 
       allow create: if isSignedIn() &&
                        request.auth.uid == request.resource.data.createdBy &&
@@ -53,7 +59,7 @@ service cloud.firestore {
 
       // Participante pode atualizar, desde que NAO remova o criador da lista.
       // Convidado pendente pode atualizar para aceitar o convite (ver NOTA acima).
-      allow update: if (isParticipant(tripId) &&
+      allow update: if (isTripParticipant() &&
                         resource.data.createdBy in request.resource.data.participants)
                        || isPendingInvite();
 
