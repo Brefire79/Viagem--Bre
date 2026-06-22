@@ -16,12 +16,24 @@
   
   body {
     @apply bg-sand text-dark antialiased;
+    font-family: theme('fontFamily.sans');
     min-height: 100vh;
     min-height: -webkit-fill-available;
     overflow-x: hidden;
     position: relative;
   }
-  
+
+  /* Titulos com a serifada de display (Fraunces) */
+  h1, h2, h3, h4 {
+    font-family: theme('fontFamily.display');
+    letter-spacing: -0.015em;
+  }
+
+  /* Numeros tabulares (financeiro) ficam alinhados */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Prevenir zoom em inputs no iOS */
   input, textarea, select {
     font-size: 16px !important;

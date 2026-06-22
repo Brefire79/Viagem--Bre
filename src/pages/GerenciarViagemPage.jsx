@@ -16,6 +16,9 @@ const GerenciarViagemPage = () => {
   const [editedName, setEditedName] = useState(currentTrip?.name || '');
   const [isEditingDestination, setIsEditingDestination] = useState(false);
   const [editedDestination, setEditedDestination] = useState(currentTrip?.destination || '');
+  const [isEditingDates, setIsEditingDates] = useState(false);
+  const [editedStartDate, setEditedStartDate] = useState(currentTrip?.startDate || '');
+  const [editedEndDate, setEditedEndDate] = useState(currentTrip?.endDate || '');
   
   const [isEditingUserName, setIsEditingUserName] = useState(false);
   const [editedUserName, setEditedUserName] = useState(user?.displayName || '');
@@ -35,6 +38,13 @@ const GerenciarViagemPage = () => {
 
   const isViewingArchived = currentTrip?.status === 'archived';
 
+  // Formata "YYYY-MM-DD" -> "DD/MM/YYYY" sem passar por Date (evita shift de timezone)
+  const formatTripDate = (d) => {
+    if (!d || typeof d !== 'string') return '';
+    const [y, m, day] = d.split('-');
+    return day && m && y ? `${day}/${m}/${y}` : d;
+  };
+
   if (!currentTrip) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -44,16 +54,6 @@ const GerenciarViagemPage = () => {
       </div>
     );
   }
-
-  // Debug: mostrar dados do criador
-  console.log('[DEBUG] Informações da viagem:', {
-    tripId: currentTrip.id,
-    createdBy: currentTrip.createdBy,
-    creatorData: participantsData[currentTrip.createdBy],
-    currentUserUid: user?.uid,
-    currentUserEmail: user?.email,
-    currentUserDisplayName: user?.displayName
-  });
 
   const handleSaveName = async () => {
     if (!editedName.trim()) return;
@@ -83,6 +83,32 @@ const GerenciarViagemPage = () => {
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       setError('Erro ao atualizar destino');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveDates = async () => {
+    if (!editedStartDate || !editedEndDate) {
+      setError('Preencha as duas datas');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+    if (editedEndDate < editedStartDate) {
+      setError('A data de término não pode ser antes da data de início');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await updateTrip(currentTrip.id, { startDate: editedStartDate, endDate: editedEndDate });
+      setIsEditingDates(false);
+      setSuccess('Datas atualizadas com sucesso!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError('Erro ao atualizar as datas');
       setTimeout(() => setError(''), 3000);
     } finally {
       setLoading(false);
@@ -634,6 +660,81 @@ const GerenciarViagemPage = () => {
               {!isViewingArchived && (
                 <button
                   onClick={() => setIsEditingDestination(true)}
+                  className="p-2 text-purple-400 hover:text-purple-300"
+                >
+                  <Edit2 size={18} />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Período da Viagem (datas) */}
+        <div className="mb-2">
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Período da Viagem {isViewingArchived && <span className="text-purple-400 text-xs">(somente leitura)</span>}
+          </label>
+          {isEditingDates && !isViewingArchived ? (
+            <div className="space-y-2">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex-1">
+                  <span className="block text-xs text-gray-400 mb-1">Início</span>
+                  <input
+                    type="date"
+                    value={editedStartDate}
+                    onChange={(e) => setEditedStartDate(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                    disabled={loading}
+                  />
+                </div>
+                <div className="flex-1">
+                  <span className="block text-xs text-gray-400 mb-1">Término</span>
+                  <input
+                    type="date"
+                    value={editedEndDate}
+                    onChange={(e) => setEditedEndDate(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveDates}
+                  disabled={loading}
+                  className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Check size={20} />
+                </button>
+                <button
+                  onClick={() => {
+                    setIsEditingDates(false);
+                    setEditedStartDate(currentTrip.startDate || '');
+                    setEditedEndDate(currentTrip.endDate || '');
+                  }}
+                  disabled={loading}
+                  className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <p className="text-xs text-orange-300/90">Atenção: alterar as datas muda o período do roteiro.</p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-700 rounded-lg">
+              <span className="text-white flex items-center gap-2">
+                <Calendar size={16} className="text-gray-400" />
+                {currentTrip.startDate && currentTrip.endDate
+                  ? `${formatTripDate(currentTrip.startDate)} a ${formatTripDate(currentTrip.endDate)}`
+                  : 'Datas não definidas'}
+              </span>
+              {!isViewingArchived && (
+                <button
+                  onClick={() => {
+                    setIsEditingDates(true);
+                    setEditedStartDate(currentTrip.startDate || '');
+                    setEditedEndDate(currentTrip.endDate || '');
+                  }}
                   className="p-2 text-purple-400 hover:text-purple-300"
                 >
                   <Edit2 size={18} />

@@ -22,7 +22,8 @@ const FinanceiroPage = () => {
     amount: '',
     paidBy: user?.uid || '',
     date: new Date().toISOString().split('T')[0],
-    status: 'pago' // 'pago' ou 'pendente'
+    status: 'pago', // 'pago' ou 'pendente'
+    splitBetween: []
   });
 
   // Categorias de despesas
@@ -208,6 +209,11 @@ const FinanceiroPage = () => {
       return;
     }
 
+    if (participants && participants.length > 1 && (!formData.splitBetween || formData.splitBetween.length === 0)) {
+      alert('Selecione entre quem dividir a despesa (ou marque Todos)');
+      return;
+    }
+
     // Cria data em UTC para evitar problemas de timezone
     const [year, month, day] = formData.date.split('-').map(Number);
     
@@ -236,8 +242,10 @@ const FinanceiroPage = () => {
       amount: Number(formData.amount),
       date: utcDate,
       status: formData.status || 'pago',
-      // Valor atrelado apenas à pessoa que pagou
-      splitBetween: [formData.paidBy]
+      // Despesa dividida entre os participantes marcados (ou só o pagador como fallback)
+      splitBetween: (formData.splitBetween && formData.splitBetween.length > 0)
+        ? formData.splitBetween
+        : [formData.paidBy]
     };
 
     let result;
@@ -278,7 +286,10 @@ const FinanceiroPage = () => {
         amount: expense.amount.toString(),
         paidBy: expense.paidBy,
         date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-        status: expense.status || 'pago'
+        status: expense.status || 'pago',
+        splitBetween: Array.isArray(expense.splitBetween) && expense.splitBetween.length > 0
+          ? expense.splitBetween
+          : (participants || [])
       });
     } else {
       setEditingExpense(null);
@@ -293,7 +304,11 @@ const FinanceiroPage = () => {
         amount: '',
         paidBy: defaultPaidBy,
         date: new Date().toISOString().split('T')[0],
-        status: 'pago'
+        status: 'pago',
+        // Por padrao, divide entre todos os participantes
+        splitBetween: participants && participants.length > 0
+          ? [...participants]
+          : (user?.uid ? [user.uid] : [])
       });
     }
     setShowModal(true);
@@ -857,6 +872,48 @@ const FinanceiroPage = () => {
                   </div>
                 )}
               </div>
+
+              {/* Dividir entre (aparece quando ha 2+ participantes) */}
+              {participants && participants.length > 1 && (
+                <div>
+                  <label className="block text-sm font-medium text-dark-100 mb-2">
+                    Dividir entre? *
+                  </label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 p-3 rounded-xl border-2 border-ocean bg-ocean-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.splitBetween?.length === participants.length}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          splitBetween: e.target.checked ? [...participants] : []
+                        })}
+                        className="w-5 h-5 accent-ocean"
+                      />
+                      <span className="font-semibold text-ocean">Todos</span>
+                    </label>
+                    {participants.map(participantId => (
+                      <label
+                        key={participantId}
+                        className="flex items-center gap-3 p-3 rounded-xl border-2 border-sand-200 cursor-pointer hover:border-sand-300"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.splitBetween?.includes(participantId) || false}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            splitBetween: e.target.checked
+                              ? [...(formData.splitBetween || []), participantId]
+                              : (formData.splitBetween || []).filter(id => id !== participantId)
+                          })}
+                          className="w-5 h-5 accent-ocean"
+                        />
+                        <span className="text-dark">{getParticipantName(participantId)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Status do pagamento */}
               <div>

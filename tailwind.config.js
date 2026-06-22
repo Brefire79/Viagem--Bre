@@ -6,48 +6,62 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        // Display serifado com caracter (titulos) + corpo grotesco limpo.
+        display: ['"Fraunces Variable"', 'Fraunces', 'ui-serif', 'Georgia', 'serif'],
+        sans: ['"Archivo Variable"', 'Archivo', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
       colors: {
+        // ===== Tema "diario de viagem" =====
+        // Os nomes (ocean/aqua/sand/dark) sao mantidos para nao quebrar as
+        // classes ja usadas nas paginas; apenas os valores foram retematizados.
+
+        // ocean = tinta marinha (cor primaria / acoes)
         ocean: {
-          DEFAULT: '#0EA5E9',
-          50: '#E0F2FE',
-          100: '#BAE6FD',
-          200: '#7DD3FC',
-          300: '#38BDF8',
-          400: '#0EA5E9',
-          500: '#0284C7',
-          600: '#0369A1',
-          700: '#075985',
-          800: '#0C4A6E',
-          900: '#082F49',
+          DEFAULT: '#1E4763',
+          50: '#EDF2F6',
+          100: '#D2DEE8',
+          200: '#A7C0D0',
+          300: '#6C92AB',
+          400: '#3E6883',
+          500: '#1E4763',
+          600: '#163A52',
+          700: '#112E41',
+          800: '#0E2533',
+          900: '#0A1A25',
         },
+        // aqua = terracota / por-do-sol (acento quente, CTAs de destaque)
         aqua: {
-          DEFAULT: '#2DD4BF',
-          50: '#F0FDFA',
-          100: '#CCFBF1',
-          200: '#99F6E4',
-          300: '#5EEAD4',
-          400: '#2DD4BF',
-          500: '#14B8A6',
-          600: '#0D9488',
-          700: '#0F766E',
-          800: '#115E59',
-          900: '#134E4A',
+          DEFAULT: '#BC5A2E',
+          50: '#FAEEE7',
+          100: '#F2D2C0',
+          200: '#E8B196',
+          300: '#DB8A63',
+          400: '#CE6B3E',
+          500: '#BC5A2E',
+          600: '#9E4A24',
+          700: '#7D3A1D',
+          800: '#5E2C16',
+          900: '#3F1D0F',
         },
+        // sand = papel quente (fundos, superficies, bordas, texto suave)
         sand: {
-          DEFAULT: '#F8FAFC',
+          DEFAULT: '#F7F1E4',
           50: '#FFFFFF',
-          100: '#F8FAFC',
-          200: '#F1F5F9',
-          300: '#E2E8F0',
-          400: '#CBD5E1',
-          500: '#94A3B8',
+          100: '#F7F1E4',
+          200: '#EFE7D5',
+          300: '#E2D7BE',
+          400: '#CBBC98',
+          500: '#9A8C70',
+          600: '#756A52',
         },
+        // dark = tinta (textos e titulos)
         dark: {
-          DEFAULT: '#0F172A',
-          50: '#475569',
-          100: '#334155',
-          200: '#1E293B',
-          300: '#0F172A',
+          DEFAULT: '#1B2A38',
+          50: '#52606B',
+          100: '#3C4853',
+          200: '#293742',
+          300: '#1B2A38',
         }
       },
     },
