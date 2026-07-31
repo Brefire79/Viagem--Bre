@@ -7,15 +7,55 @@ import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { pageVariants, storyParagraphVariants, buttonVariants, modalOverlayVariants, modalContentVariants } from '../utils/motionVariants';
 import DOMPurify from 'dompurify';
-import { pdfExporter } from '../utils/pdfExporter';
 
+const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+// Converte 'yyyy-MM-dd' (ou Timestamp/Date) para o início do dia em UTC.
+// Todo o app grava eventos em UTC, então as comparações de período também
+// precisam ser feitas em UTC para não escorregar um dia no fuso do Brasil.
+const toUtcDayStart = (value) => {
+  if (!value) return null;
+
+  if (typeof value === 'string' && value.includes('-')) {
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  }
+
+  const parsed = value?.toDate ? value.toDate() : new Date(value);
+  if (isNaN(parsed)) return null;
+
+  return new Date(Date.UTC(
+    parsed.getUTCFullYear(),
+    parsed.getUTCMonth(),
+    parsed.getUTCDate(),
+    0, 0, 0, 0
+  ));
+};
+
+// Mesmo que toUtcDayStart, mas no último instante do dia
+const toUtcDayEnd = (value) => {
+  const start = toUtcDayStart(value);
+  if (!start) return null;
+  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+};
+
+// Formata uma data usando os componentes UTC (o format() do date-fns usa o fuso
+// local e mostraria o dia anterior para datas gravadas à meia-noite UTC)
+const formatUtcDate = (date, { withYear = true } = {}) => {
+  if (!date || isNaN(date)) return '';
+  const day = date.getUTCDate();
+  const month = MONTH_NAMES[date.getUTCMonth()];
+  return withYear
+    ? `${day} de ${month} de ${date.getUTCFullYear()}`
+    : `${day} de ${month}`;
+};
 
 const HistoriaPage = () => {
   const { user } = useAuth();
   const { currentTrip, events, expenses, participants, participantsData } = useTrip();
   const [copied, setCopied] = useState(false);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const [manualStory, setManualStory] = useState("");
 
   // Função para exportar PDF
@@ -45,9 +85,13 @@ const HistoriaPage = () => {
     };
 
     const filename = `historia-${currentTrip.name.toLowerCase().replace(/\s+/g, '-')}-${format(new Date(), 'yyyy-MM-dd')}`;
-    
+
+    // Carrega o gerador de PDF sob demanda para não pesar a abertura da aba
+    const { pdfExporter } = await import('../utils/pdfExporter');
     const success = await pdfExporter.exportTripStory(exportData, filename);
-    
+
+    setShowSaveMenu(false);
+
     if (success) {
       alert('PDF exportado com sucesso!');
     } else {
@@ -64,37 +108,23 @@ const HistoriaPage = () => {
       return { text: manualStory };
     }
 
-    // Filtra eventos que estão dentro do período da viagem
+    // Filtra eventos que estão dentro do período da viagem.
+    // Os eventos são gravados em UTC (ver RoteiroPage), então o período também
+    // precisa ser montado em UTC - caso contrário, no fuso do Brasil, eventos da
+    // madrugada do primeiro dia ficavam de fora e a madrugada do dia seguinte ao
+    // fim entrava indevidamente.
     let filteredEvents = events;
     if (currentTrip.startDate && currentTrip.endDate) {
-      let tripStart, tripEnd;
-      
-      // Forçar interpretação como data local, não UTC
-      if (typeof currentTrip.startDate === 'string') {
-        const [year, month, day] = currentTrip.startDate.split('-').map(Number);
-        tripStart = new Date(year, month - 1, day);
-      } else if (currentTrip.startDate?.toDate) {
-        tripStart = currentTrip.startDate.toDate();
-      } else {
-        tripStart = new Date(currentTrip.startDate);
+      const tripStart = toUtcDayStart(currentTrip.startDate);
+      const tripEnd = toUtcDayEnd(currentTrip.endDate);
+
+      if (tripStart && tripEnd) {
+        filteredEvents = events.filter(event => {
+          const eventDate = event.date?.toDate?.() || new Date(event.date);
+          if (isNaN(eventDate)) return false;
+          return eventDate >= tripStart && eventDate <= tripEnd;
+        });
       }
-      
-      if (typeof currentTrip.endDate === 'string') {
-        const [year, month, day] = currentTrip.endDate.split('-').map(Number);
-        tripEnd = new Date(year, month - 1, day);
-      } else if (currentTrip.endDate?.toDate) {
-        tripEnd = currentTrip.endDate.toDate();
-      } else {
-        tripEnd = new Date(currentTrip.endDate);
-      }
-      
-      tripStart.setHours(0, 0, 0, 0);
-      tripEnd.setHours(23, 59, 59, 999);
-      
-      filteredEvents = events.filter(event => {
-        const eventDate = event.date?.toDate?.() || new Date(event.date);
-        return eventDate >= tripStart && eventDate <= tripEnd;
-      });
     }
 
     if (filteredEvents.length === 0) return null;
@@ -109,31 +139,18 @@ const HistoriaPage = () => {
     // Usa as datas definidas na viagem ou pega do primeiro/último evento
     let firstDate, lastDate;
     if (currentTrip.startDate && currentTrip.endDate) {
-      // Forçar interpretação como data local, não UTC
-      if (typeof currentTrip.startDate === 'string') {
-        const [year, month, day] = currentTrip.startDate.split('-').map(Number);
-        firstDate = new Date(year, month - 1, day);
-      } else if (currentTrip.startDate?.toDate) {
-        firstDate = currentTrip.startDate.toDate();
-      } else {
-        firstDate = new Date(currentTrip.startDate);
-      }
-      
-      if (typeof currentTrip.endDate === 'string') {
-        const [year, month, day] = currentTrip.endDate.split('-').map(Number);
-        lastDate = new Date(year, month - 1, day);
-      } else if (currentTrip.endDate?.toDate) {
-        lastDate = currentTrip.endDate.toDate();
-      } else {
-        lastDate = new Date(currentTrip.endDate);
-      }
-    } else {
+      firstDate = toUtcDayStart(currentTrip.startDate);
+      lastDate = toUtcDayStart(currentTrip.endDate);
+    }
+
+    if (!firstDate || !lastDate) {
       const firstEvent = sortedEvents[0];
       const lastEvent = sortedEvents[sortedEvents.length - 1];
       firstDate = firstEvent.date?.toDate?.() || new Date(firstEvent.date);
       lastDate = lastEvent.date?.toDate?.() || new Date(lastEvent.date);
     }
-    const tripDuration = differenceInDays(lastDate, firstDate) + 1;
+
+    const tripDuration = Math.max(1, differenceInDays(lastDate, firstDate) + 1);
 
     // Agrupa eventos por tipo
     const eventsByType = sortedEvents.reduce((acc, event) => {
@@ -142,10 +159,24 @@ const HistoriaPage = () => {
       return acc;
     }, {});
 
-    // Cálculos financeiros
-    const totalSpent = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
-    const expensesByCategory = expenses.reduce((acc, exp) => {
-      acc[exp.category] = (acc[exp.category] || 0) + Number(exp.amount);
+    // Cálculos financeiros.
+    // Mesma regra da aba Financeiro: despesas sem status são consideradas pagas
+    // (compatibilidade com dados antigos) e as pendentes ficam de fora do total,
+    // para que os dois lugares nunca mostrem números diferentes.
+    const amountOf = (exp) => {
+      const value = Number(exp.amount);
+      return isNaN(value) ? 0 : value;
+    };
+
+    const paidExpenses = expenses.filter(exp => !exp.status || exp.status === 'pago');
+    const pendingExpenses = expenses.filter(exp => exp.status === 'pendente');
+
+    const totalSpent = paidExpenses.reduce((sum, exp) => sum + amountOf(exp), 0);
+    const totalPending = pendingExpenses.reduce((sum, exp) => sum + amountOf(exp), 0);
+
+    const expensesByCategory = paidExpenses.reduce((acc, exp) => {
+      const category = exp.category || 'outros';
+      acc[category] = (acc[category] || 0) + amountOf(exp);
       return acc;
     }, {});
 
@@ -173,8 +204,10 @@ const HistoriaPage = () => {
     // Gera a história
     let story = `# ${currentTrip.name}\n\n`;
     story += `## Uma Aventura de ${tripDuration} ${tripDuration === 1 ? 'Dia' : 'Dias'}\n\n`;
-    story += `Entre ${format(firstDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })} e ${format(lastDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}, `;
-    story += `${participantNames || 'nós'} embarcamos em uma jornada memorável${participants.length > 0 ? ' com ' + participants.length + (participants.length === 1 ? ' pessoa' : ' pessoas') : ''}. `;
+    story += `Entre ${formatUtcDate(firstDate)} e ${formatUtcDate(lastDate)}, `;
+    story += participantNames
+      ? `${participantNames} ${participants.length === 1 ? 'embarcou' : 'embarcamos'} em uma jornada memorável. `
+      : `embarcamos em uma jornada memorável. `;
     story += `Esta é a história de como criamos memórias que vão durar para sempre.\n\n`;
 
     story += `## 🗺️ Nosso Roteiro\n\n`;
@@ -209,7 +242,7 @@ const HistoriaPage = () => {
       story += `Vivemos ${eventsByType.passeio.length} ${eventsByType.passeio.length === 1 ? 'experiência incrível' : 'experiências incríveis'}:\n\n`;
       eventsByType.passeio.forEach(event => {
         const eventDate = event.date?.toDate?.() || new Date(event.date);
-        story += `- **${event.title}** - ${format(eventDate, "d 'de' MMMM", { locale: ptBR })}`;
+        story += `- **${event.title}** - ${formatUtcDate(eventDate, { withYear: false })}`;
         if (event.description) story += `: ${event.description}`;
         story += `\n`;
       });
@@ -227,34 +260,50 @@ const HistoriaPage = () => {
     // Seção financeira
     story += `## 💰 Investimento na Experiência\n\n`;
     story += `Para tornar essa viagem realidade, investimos um total de **${formatCurrency(totalSpent)}**. `;
-    
-    const expenseCount = expenses.length;
+
+    const expenseCount = paidExpenses.length;
     story += `Ao longo de ${expenseCount} ${expenseCount === 1 ? 'transação' : 'transações'}, `;
     story += `gerenciamos cuidadosamente nossos recursos para aproveitar ao máximo cada momento.\n\n`;
 
-    story += `### Distribuição dos Gastos\n\n`;
-    Object.entries(expensesByCategory)
-      .sort(([, a], [, b]) => b - a)
-      .forEach(([category, amount]) => {
-        const percentage = ((amount / totalSpent) * 100).toFixed(1);
-        story += `- **${categoryLabels[category] || category}**: ${formatCurrency(amount)} (${percentage}%)\n`;
-      });
-    story += `\n`;
+    if (pendingExpenses.length > 0) {
+      story += `Ainda há ${pendingExpenses.length} ${pendingExpenses.length === 1 ? 'despesa pendente' : 'despesas pendentes'}, `;
+      story += `somando ${formatCurrency(totalPending)}, que não entram nos totais abaixo.\n\n`;
+    }
+
+    if (totalSpent > 0) {
+      story += `### Distribuição dos Gastos\n\n`;
+      Object.entries(expensesByCategory)
+        .sort(([, a], [, b]) => b - a)
+        .forEach(([category, amount]) => {
+          const percentage = ((amount / totalSpent) * 100).toFixed(1);
+          story += `- **${categoryLabels[category] || category}**: ${formatCurrency(amount)} (${percentage}%)\n`;
+        });
+      story += `\n`;
+    }
 
     // Cálculos financeiros detalhados por participante
-    const paidByPerson = expenses.reduce((acc, exp) => {
-      acc[exp.paidBy] = (acc[exp.paidBy] || 0) + Number(exp.amount);
+    const paidByPerson = paidExpenses.reduce((acc, exp) => {
+      if (!exp.paidBy) return acc;
+      acc[exp.paidBy] = (acc[exp.paidBy] || 0) + amountOf(exp);
       return acc;
     }, {});
 
-    const shouldPayPerPerson = expenses.reduce((acc, exp) => {
-      const splitCount = exp.splitBetween.length;
-      const amountPerPerson = Number(exp.amount) / splitCount;
-      
-      exp.splitBetween.forEach(personId => {
+    // Despesas antigas podem não ter splitBetween gravado; nesse caso a despesa
+    // fica com quem pagou (mesma regra da aba Financeiro). Sem esta proteção a
+    // aba inteira quebrava ao ler dados antigos.
+    const shouldPayPerPerson = paidExpenses.reduce((acc, exp) => {
+      const splitBetween = Array.isArray(exp.splitBetween) && exp.splitBetween.length > 0
+        ? exp.splitBetween
+        : (exp.paidBy ? [exp.paidBy] : []);
+
+      const splitCount = splitBetween.length;
+      if (!splitCount) return acc;
+
+      const amountPerPerson = amountOf(exp) / splitCount;
+      splitBetween.forEach(personId => {
         acc[personId] = (acc[personId] || 0) + amountPerPerson;
       });
-      
+
       return acc;
     }, {});
 
@@ -268,7 +317,9 @@ const HistoriaPage = () => {
     });
 
     // Resumo financeiro por pessoa
-    story += `### Resumo Financeiro por Participante\n\n`;
+    if (allParticipants.length > 0) {
+      story += `### Resumo Financeiro por Participante\n\n`;
+    }
     allParticipants.forEach(personId => {
       const participantName = participantsData[personId]?.displayName || personId.substring(0, 8);
       const paid = paidByPerson[personId] || 0;
@@ -353,9 +404,7 @@ const HistoriaPage = () => {
   };
 
   const handleSaveAsPDF = () => {
-    // Placeholder para futura implementação com jsPDF ou similar
-    alert('🚧 Exportação em PDF será implementada em breve!\n\nPor enquanto, você pode:\n• Salvar como texto (.txt)\n• Salvar como Markdown (.md)\n• Copiar e colar em um editor de texto');
-    setShowSaveMenu(false);
+    handleExportPDF();
   };
 
   // Preview da história em HTML com animação
@@ -544,14 +593,14 @@ const HistoriaPage = () => {
 
                   <motion.button
                     onClick={handleSaveAsPDF}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-sand-50 transition-colors text-left opacity-60"
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-sand-50 transition-colors text-left"
                     whileHover={{ x: 4 }}
                     whileTap={{ scale: 0.98 }}
                   >
-                    <Download className="w-5 h-5 text-sand-400" />
+                    <Download className="w-5 h-5 text-ocean" />
                     <div>
                       <div className="font-medium text-dark">PDF (.pdf)</div>
-                      <div className="text-xs text-sand-500">Em breve 🚧</div>
+                      <div className="text-xs text-sand-500">Pronto para imprimir</div>
                     </div>
                   </motion.button>
                 </div>

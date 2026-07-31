@@ -32,3 +32,9 @@ firebase-debug.log
 .env
 .env.local
 .env.production
+
+# Local Netlify folder
+.netlify
+
+# Configuracao local do Claude Code (nao versionar)
+.claude/settings.local.json

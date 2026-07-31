@@ -9,7 +9,6 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { pageVariants, cardVariants, buttonVariants, modalOverlayVariants, modalContentVariants } from '../utils/motionVariants';
-import { pdfExporter } from '../utils/pdfExporter';
 
 const FinanceiroPage = () => {
   const { user } = useAuth();
@@ -66,7 +65,9 @@ const FinanceiroPage = () => {
     };
 
     const filename = `financeiro-${currentTrip.name.toLowerCase().replace(/\s+/g, '-')}-${format(new Date(), 'yyyy-MM-dd')}`;
-    
+
+    // Carrega o gerador de PDF sob demanda para não pesar a abertura da aba
+    const { pdfExporter } = await import('../utils/pdfExporter');
     const success = await pdfExporter.exportFinanceReport(exportData, filename);
     
     if (success) {

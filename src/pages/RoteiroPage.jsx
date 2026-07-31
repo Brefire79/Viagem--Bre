@@ -1,17 +1,26 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTrip } from '../contexts/TripContext';
-import { Plus, Plane, Car, Hotel, MapPin, UtensilsCrossed, X, Edit2, Trash2, Calendar as CalendarIcon, Clock, MapPinIcon, Check, AlertCircle, CalendarRange, ExternalLink } from 'lucide-react';
+import { Plus, Plane, Car, Hotel, MapPin, UtensilsCrossed, X, Edit2, Trash2, Calendar as CalendarIcon, Clock, MapPinIcon, Check, AlertCircle, CalendarRange, ExternalLink, Printer, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { pageVariants, cardVariants, buttonVariants, modalOverlayVariants, modalContentVariants, successVariants } from '../utils/motionVariants';
 import TripCountdown from '../components/TripCountdown';
 
 const RoteiroPage = () => {
-  const { events, addEvent, updateEvent, deleteEvent, currentTrip, createTrip, updateTrip } = useTrip();
+  const { events, addEvent, updateEvent, deleteEvent, currentTrip, createTrip, updateTrip, participants, participantsData } = useTrip();
   const [showModal, setShowModal] = useState(false);
   const [showTripModal, setShowTripModal] = useState(false);
   const [showEditDatesModal, setShowEditDatesModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [printOptions, setPrintOptions] = useState({
+    includeChecklist: true,
+    includeLocation: true,
+    includeDescription: true,
+    includeParticipants: true,
+    includeNotes: false
+  });
   const [editingEvent, setEditingEvent] = useState(null);
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -201,8 +210,8 @@ const RoteiroPage = () => {
 
   const handleOpenEditDatesModal = () => {
     setEditDatesData({
-      startDate: currentTrip.startDate || '',
-      endDate: currentTrip.endDate || ''
+      startDate: currentTrip.startDate || currentTrip.start_date || '',
+      endDate: currentTrip.endDate || currentTrip.end_date || ''
     });
     document.body.style.overflow = 'hidden';
     setShowEditDatesModal(true);
@@ -347,6 +356,146 @@ const RoteiroPage = () => {
 
   const groupedEvents = groupEventsByDate();
   const sortedDates = Object.keys(groupedEvents).sort();
+
+  // ========== IMPRESSÃO / PDF DO ROTEIRO ==========
+
+  const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+  // Formata 'yyyy-MM-dd' sem passar por UTC->local (evita cair um dia antes)
+  const formatTripDate = (dateStr) => {
+    if (!dateStr) return '';
+    if (typeof dateStr === 'string' && dateStr.includes('-')) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      if (!year || !month || !day) return '';
+      return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+    }
+    const parsed = dateStr?.toDate ? dateStr.toDate() : new Date(dateStr);
+    return isNaN(parsed) ? '' : parsed.toLocaleDateString('pt-BR');
+  };
+
+  // Nome de arquivo sem acentos/espaços
+  const slugify = (value) =>
+    (value || 'viagem')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'viagem';
+
+  // Monta o payload do PDF a partir do MESMO agrupamento exibido na tela,
+  // garantindo que o impresso reflita o roteiro atualizado.
+  const buildItineraryData = () => {
+    const days = sortedDates.map((dateKey) => {
+      const [year, month, day] = dateKey.split('-').map(Number);
+      const utcDate = new Date(Date.UTC(year, month - 1, day));
+
+      return {
+        title: `${day} de ${MONTH_NAMES[month - 1]} de ${year}`,
+        weekday: format(utcDate, 'EEEE', { locale: ptBR }),
+        events: groupedEvents[dateKey].map((event) => ({
+          time: `${String(event.parsedDate.getUTCHours()).padStart(2, '0')}:${String(event.parsedDate.getUTCMinutes()).padStart(2, '0')}`,
+          type: event.type,
+          typeLabel: eventTypes[event.type]?.label || event.type || '',
+          title: event.title || 'Sem título',
+          location: event.location || '',
+          description: event.description || ''
+        }))
+      };
+    });
+
+    const byType = Object.entries(eventTypes)
+      .map(([key, { label }]) => ({
+        label,
+        count: events.filter((event) => event.type === key).length
+      }))
+      .filter((item) => item.count > 0);
+
+    const startDate = currentTrip.startDate || currentTrip.start_date;
+    const endDate = currentTrip.endDate || currentTrip.end_date;
+    const startLabel = formatTripDate(startDate);
+    const endLabel = formatTripDate(endDate);
+
+    return {
+      trip: {
+        name: currentTrip.name || 'Viagem',
+        destination: currentTrip.destination || '',
+        period: startLabel && endLabel
+          ? `${startLabel} a ${endLabel}`
+          : (startLabel || endLabel || '')
+      },
+      days,
+      summary: {
+        totalEvents: events.length,
+        totalDays: sortedDates.length,
+        byType
+      },
+      participants: (participants || [])
+        .map((uid) => participantsData?.[uid]?.displayName)
+        .filter(Boolean)
+    };
+  };
+
+  const handleOpenPrintModal = () => {
+    document.body.style.overflow = 'hidden';
+    setShowPrintModal(true);
+  };
+
+  const handleClosePrintModal = () => {
+    document.body.style.overflow = '';
+    setShowPrintModal(false);
+  };
+
+  // mode: 'print' (abre a impressão) | 'download' (salva o PDF)
+  const handleGenerateItinerary = async (mode) => {
+    if (!currentTrip || printing) return;
+
+    if (sortedDates.length === 0) {
+      alert('Adicione pelo menos um evento antes de imprimir o roteiro.');
+      return;
+    }
+
+    setPrinting(true);
+
+    try {
+      // Carrega o gerador de PDF sob demanda: a biblioteca (jsPDF) só entra na
+      // rede quando o usuário realmente pede o impresso, mantendo o Roteiro leve.
+      const { pdfExporter, printPdfFromUrl } = await import('../utils/pdfExporter');
+
+      const itineraryData = buildItineraryData();
+      const filename = `roteiro-${slugify(currentTrip.name)}-${format(new Date(), 'yyyy-MM-dd')}`;
+
+      const result = await pdfExporter.exportItinerary(itineraryData, filename, {
+        ...printOptions,
+        output: mode === 'print' ? 'print' : 'save'
+      });
+
+      if (!result.success) {
+        alert('Erro ao gerar o PDF do roteiro: ' + (result.error || 'Erro desconhecido'));
+        return;
+      }
+
+      if (mode === 'print') {
+        const opened = result.url ? await printPdfFromUrl(result.url) : false;
+        if (!opened) {
+          alert('Não foi possível abrir a impressão (verifique o bloqueador de pop-ups). Use "Baixar PDF" como alternativa.');
+          return;
+        }
+      }
+
+      setSuccessMessage(mode === 'print' ? 'Roteiro enviado para impressão!' : 'PDF do roteiro gerado!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+      handleClosePrintModal();
+    } catch (error) {
+      console.error('Erro ao gerar roteiro em PDF:', error);
+      alert('Erro ao gerar o PDF do roteiro. Tente novamente.');
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const togglePrintOption = (key) => {
+    setPrintOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   if (!currentTrip) {
     return (
@@ -581,18 +730,49 @@ const RoteiroPage = () => {
         </motion.div>
       )}
 
-      {/* Botão adicionar com animação */}
-      <motion.button
-        onClick={() => handleOpenModal()}
-        className="btn-primary w-full sm:w-auto mb-8 shadow-lg hover:shadow-xl"
-        variants={buttonVariants}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-      >
-        <Plus className="w-5 h-5 inline mr-2" />
-        Adicionar Evento
-      </motion.button>
+      {/* Ações do roteiro */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-8">
+        <motion.button
+          onClick={() => handleOpenModal()}
+          className="btn-primary w-full sm:w-auto shadow-lg hover:shadow-xl"
+          variants={buttonVariants}
+          initial="rest"
+          whileHover="hover"
+          whileTap="tap"
+        >
+          <Plus className="w-5 h-5 inline mr-2" />
+          Adicionar Evento
+        </motion.button>
+
+        {/* Alterar o período da viagem */}
+        <motion.button
+          onClick={handleOpenEditDatesModal}
+          className="btn-outline w-full sm:w-auto flex items-center justify-center gap-2"
+          variants={buttonVariants}
+          initial="rest"
+          whileHover="hover"
+          whileTap="tap"
+          title="Alterar as datas de início e fim da viagem"
+        >
+          <CalendarRange className="w-5 h-5" />
+          Alterar Datas
+        </motion.button>
+
+        {/* Imprimir / exportar o roteiro atualizado */}
+        <motion.button
+          onClick={handleOpenPrintModal}
+          className="btn-outline w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-2"
+          variants={buttonVariants}
+          initial="rest"
+          whileHover="hover"
+          whileTap="tap"
+          title="Gerar PDF do roteiro para imprimir"
+          disabled={printing}
+        >
+          <Printer className="w-5 h-5" />
+          {printing ? 'Gerando...' : 'Imprimir Roteiro'}
+        </motion.button>
+      </div>
 
       {/* Lista de eventos */}
       {sortedDates.length === 0 ? (
@@ -1072,6 +1252,132 @@ const RoteiroPage = () => {
               </form>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Impressão / PDF do Roteiro */}
+      <AnimatePresence>
+        {showPrintModal && (
+          <motion.div
+            className="modal-overlay"
+            variants={modalOverlayVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !printing) {
+                handleClosePrintModal();
+              }
+            }}
+          >
+            <motion.div
+              className="modal-container"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="modal-header">
+                <h2 className="text-2xl font-bold text-dark">Imprimir Roteiro</h2>
+                <motion.button
+                  type="button"
+                  onClick={handleClosePrintModal}
+                  className="modal-close"
+                  whileHover={{ scale: 1.1, rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  disabled={printing}
+                >
+                  <X className="w-5 h-5" />
+                </motion.button>
+              </div>
+
+              <div className="p-4 md:p-6 space-y-5 overflow-y-auto">
+                {/* Resumo do que será impresso */}
+                <div className="bg-sand-100 border border-sand-300 rounded-xl p-4">
+                  <p className="font-bold text-dark mb-1">{currentTrip.name}</p>
+                  {currentTrip.destination && (
+                    <p className="text-sm text-sand-500">{currentTrip.destination}</p>
+                  )}
+                  <p className="text-sm text-sand-500 mt-2">
+                    {events.length} {events.length === 1 ? 'evento' : 'eventos'} em{' '}
+                    {sortedDates.length} {sortedDates.length === 1 ? 'dia' : 'dias'}
+                  </p>
+                </div>
+
+                {/* Opções de conteúdo */}
+                <div>
+                  <p className="block text-sm font-medium text-dark-100 mb-3">
+                    O que incluir no impresso
+                  </p>
+                  <div className="space-y-2">
+                    {[
+                      { key: 'includeChecklist', label: 'Caixas para marcar (☐) em cada evento', hint: 'Ideal para acompanhar o roteiro no papel' },
+                      { key: 'includeLocation', label: 'Locais dos eventos' },
+                      { key: 'includeDescription', label: 'Descrições dos eventos' },
+                      { key: 'includeParticipants', label: 'Lista de viajantes' },
+                      { key: 'includeNotes', label: 'Espaço para anotações à mão' }
+                    ].map(({ key, label, hint }) => (
+                      <label
+                        key={key}
+                        className="flex items-start gap-3 p-3 border-2 border-sand-300 rounded-xl cursor-pointer hover:border-ocean-200 transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={printOptions[key]}
+                          onChange={() => togglePrintOption(key)}
+                          className="mt-0.5 w-5 h-5 accent-ocean flex-shrink-0"
+                        />
+                        <span className="text-sm text-dark-100">
+                          {label}
+                          {hint && <span className="block text-xs text-sand-500 mt-0.5">{hint}</span>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Aviso */}
+                <div className="bg-ocean-50 border border-ocean-200 rounded-lg p-3 flex gap-3">
+                  <AlertCircle className="w-5 h-5 text-ocean flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-dark-50">
+                    O PDF é gerado no seu dispositivo com os dados atuais do roteiro. Sempre que
+                    houver mudanças, gere novamente para ter o impresso atualizado.
+                  </p>
+                </div>
+
+                {/* Ações */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <motion.button
+                    type="button"
+                    onClick={() => handleGenerateItinerary('download')}
+                    className="btn-outline flex-1 flex items-center justify-center gap-2"
+                    variants={buttonVariants}
+                    initial="rest"
+                    whileHover="hover"
+                    whileTap="tap"
+                    disabled={printing}
+                  >
+                    <Download className="w-5 h-5" />
+                    Baixar PDF
+                  </motion.button>
+                  <motion.button
+                    type="button"
+                    onClick={() => handleGenerateItinerary('print')}
+                    className="btn-primary flex-1 flex items-center justify-center gap-2"
+                    variants={buttonVariants}
+                    initial="rest"
+                    whileHover="hover"
+                    whileTap="tap"
+                    disabled={printing}
+                  >
+                    <Printer className="w-5 h-5" />
+                    {printing ? 'Gerando...' : 'Imprimir'}
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
