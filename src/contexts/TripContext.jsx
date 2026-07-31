@@ -12,6 +12,7 @@ import {
   query,
   where,
   serverTimestamp,
+  writeBatch,
   arrayUnion,
   arrayRemove
 } from 'firebase/firestore';
@@ -368,6 +369,77 @@ export const TripProvider = ({ children }) => {
     }
   };
 
+  const importEvents = async (eventsToImport) => {
+    if (!currentTrip || !db || !user) {
+      return { success: false, error: 'Nenhuma viagem selecionada ou usuário não autenticado' };
+    }
+
+    if (!Array.isArray(eventsToImport) || eventsToImport.length === 0) {
+      return { success: false, error: 'Nenhum evento válido para importar' };
+    }
+
+    try {
+      const existingImportKeys = new Set(
+        events.map(event => event.importKey).filter(Boolean)
+      );
+
+      const existingSignatures = new Set(events.map(event => {
+        const eventDate = event.date?.toDate
+          ? event.date.toDate()
+          : event.date instanceof Date
+            ? event.date
+            : new Date(event.date);
+
+        const isoDate = Number.isNaN(eventDate.getTime())
+          ? ''
+          : eventDate.toISOString().slice(0, 16);
+
+        return `${event.type}|${(event.title || '').trim().toLowerCase()}|${isoDate}`;
+      }));
+
+      const pendingEvents = eventsToImport.filter(event => {
+        if (!event.importKey || !event.title || !(event.date instanceof Date)) {
+          return false;
+        }
+
+        const signature = `${event.type}|${event.title.trim().toLowerCase()}|${event.date.toISOString().slice(0, 16)}`;
+        return !existingImportKeys.has(event.importKey) && !existingSignatures.has(signature);
+      });
+
+      if (pendingEvents.length === 0) {
+        return {
+          success: true,
+          added: 0,
+          skipped: eventsToImport.length
+        };
+      }
+
+      const batch = writeBatch(db);
+      const eventsRef = collection(db, 'events');
+
+      pendingEvents.forEach(event => {
+        const eventRef = doc(eventsRef, `${currentTrip.id}_${event.importKey}`);
+        batch.set(eventRef, {
+          ...event,
+          tripId: currentTrip.id,
+          createdBy: user.uid,
+          createdAt: serverTimestamp()
+        });
+      });
+
+      await batch.commit();
+
+      return {
+        success: true,
+        added: pendingEvents.length,
+        skipped: eventsToImport.length - pendingEvents.length
+      };
+    } catch (error) {
+      console.error('Erro ao importar eventos:', error.message);
+      return { success: false, error: error.message };
+    }
+  };
+
   const updateEvent = async (eventId, eventData) => {
     if (!currentTrip || !db) return { success: false, error: 'Nenhuma viagem selecionada' };
 
@@ -531,6 +603,7 @@ export const TripProvider = ({ children }) => {
     addParticipant,
     removeParticipant,
     addEvent,
+    importEvents,
     updateEvent,
     deleteEvent,
     addExpense,
