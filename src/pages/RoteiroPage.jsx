@@ -6,14 +6,16 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { pageVariants, cardVariants, buttonVariants, modalOverlayVariants, modalContentVariants, successVariants } from '../utils/motionVariants';
 import TripCountdown from '../components/TripCountdown';
+import { createOrlando2026Events, ORLANDO_2026_IMPORT_KEYS } from '../data/orlando2026';
 
 const RoteiroPage = () => {
-  const { events, addEvent, updateEvent, deleteEvent, currentTrip, createTrip, updateTrip } = useTrip();
+  const { events, addEvent, importEvents, updateEvent, deleteEvent, currentTrip, createTrip, updateTrip } = useTrip();
   const [showModal, setShowModal] = useState(false);
   const [showTripModal, setShowTripModal] = useState(false);
   const [showEditDatesModal, setShowEditDatesModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [importingItinerary, setImportingItinerary] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [editDatesData, setEditDatesData] = useState({
     startDate: '',
@@ -279,6 +281,54 @@ const RoteiroPage = () => {
   const handleDeleteEvent = async (eventId) => {
     if (window.confirm('Tem certeza que deseja excluir este evento?')) {
       await deleteEvent(eventId);
+    }
+  };
+
+  const tripNameAndDestination = `${currentTrip?.name || ''} ${currentTrip?.destination || ''}`.toLowerCase();
+  const isOrlando2026Trip =
+    tripNameAndDestination.includes('orlando') &&
+    (currentTrip?.startDate || currentTrip?.start_date) === '2026-10-02' &&
+    (currentTrip?.endDate || currentTrip?.end_date) === '2026-10-11';
+
+  const orlando2026Events = createOrlando2026Events();
+  const importedOrlandoEvents = orlando2026Events.filter(seedEvent =>
+    events.some(event =>
+      event.importKey === seedEvent.importKey ||
+      (
+        event.type === seedEvent.type &&
+        (event.title || '').trim().toLowerCase() === seedEvent.title.trim().toLowerCase() &&
+        event.date?.toISOString?.() === seedEvent.date.toISOString()
+      )
+    )
+  ).length;
+
+  const handleImportOrlando2026 = async () => {
+    const pendingCount = ORLANDO_2026_IMPORT_KEYS.length - importedOrlandoEvents;
+
+    if (pendingCount === 0) {
+      setSuccessMessage('O roteiro Orlando 2026 já está completo!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Adicionar ${pendingCount} evento${pendingCount === 1 ? '' : 's'} do roteiro Orlando 2026? Os eventos existentes serão preservados.`
+    );
+
+    if (!confirmed) return;
+
+    setImportingItinerary(true);
+    const result = await importEvents(orlando2026Events);
+    setImportingItinerary(false);
+
+    if (result.success) {
+      const message = result.added > 0
+        ? `${result.added} evento${result.added === 1 ? '' : 's'} do roteiro adicionados!`
+        : 'O roteiro Orlando 2026 já estava completo!';
+      setSuccessMessage(message);
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } else {
+      alert('Erro ao importar o roteiro: ' + (result.error || 'Erro desconhecido'));
     }
   };
 
@@ -581,18 +631,41 @@ const RoteiroPage = () => {
         </motion.div>
       )}
 
-      {/* Botão adicionar com animação */}
-      <motion.button
-        onClick={() => handleOpenModal()}
-        className="btn-primary w-full sm:w-auto mb-8 shadow-lg hover:shadow-xl"
-        variants={buttonVariants}
-        initial="rest"
-        whileHover="hover"
-        whileTap="tap"
-      >
-        <Plus className="w-5 h-5 inline mr-2" />
-        Adicionar Evento
-      </motion.button>
+      {/* Ações do roteiro */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-8">
+        <motion.button
+          onClick={() => handleOpenModal()}
+          className="btn-primary w-full sm:w-auto shadow-lg hover:shadow-xl"
+          variants={buttonVariants}
+          initial="rest"
+          whileHover="hover"
+          whileTap="tap"
+        >
+          <Plus className="w-5 h-5 inline mr-2" />
+          Adicionar Evento
+        </motion.button>
+
+        {isOrlando2026Trip && (
+          <motion.button
+            onClick={handleImportOrlando2026}
+            className="btn-outline w-full sm:w-auto"
+            variants={buttonVariants}
+            initial="rest"
+            whileHover="hover"
+            whileTap="tap"
+            disabled={importingItinerary || importedOrlandoEvents === ORLANDO_2026_IMPORT_KEYS.length}
+          >
+            <CalendarRange className="w-5 h-5 inline mr-2" />
+            {importingItinerary
+              ? 'Importando roteiro...'
+              : importedOrlandoEvents === ORLANDO_2026_IMPORT_KEYS.length
+                ? 'Roteiro Orlando importado'
+                : importedOrlandoEvents > 0
+                  ? `Completar roteiro (${ORLANDO_2026_IMPORT_KEYS.length - importedOrlandoEvents})`
+                  : 'Importar roteiro Orlando 2026'}
+          </motion.button>
+        )}
+      </div>
 
       {/* Lista de eventos */}
       {sortedDates.length === 0 ? (
@@ -643,8 +716,8 @@ const RoteiroPage = () => {
                     <p className="text-xs text-sand-500">
                       {(() => {
                         const [year, month, day] = dateKey.split('-').map(Number);
-                        const utcDate = new Date(Date.UTC(year, month - 1, day));
-                        return format(utcDate, "EEEE", { locale: ptBR });
+                        const localDate = new Date(year, month - 1, day, 12);
+                        return format(localDate, "EEEE", { locale: ptBR });
                       })()}
                     </p>
                   </div>
