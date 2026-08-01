@@ -64,7 +64,9 @@ const FinanceiroPage = () => {
       }
     };
 
-    const filename = `financeiro-${currentTrip.name.toLowerCase().replace(/\s+/g, '-')}-${format(new Date(), 'yyyy-MM-dd')}`;
+    // Data E hora no nome: exportar duas vezes no mesmo dia precisa gerar dois
+    // arquivos distintos, senão o antigo continua no disco e parece desatualizado
+    const filename = `financeiro-${currentTrip.name.toLowerCase().replace(/\s+/g, '-')}-${format(new Date(), "yyyy-MM-dd_HH'h'mm")}`;
 
     // Carrega o gerador de PDF sob demanda para não pesar a abertura da aba
     const { pdfExporter } = await import('../utils/pdfExporter');

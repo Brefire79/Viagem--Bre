@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   collection, 
   doc, 
@@ -41,6 +41,11 @@ export const TripProvider = ({ children }) => {
   const [participantsData, setParticipantsData] = useState({});
   const [loading, setLoading] = useState(true);
 
+  // Guarda a viagem escolhida pelo usuário. Sem isso, qualquer atualização
+  // vinda do Firestore voltava para a primeira viagem ativa e descartava a
+  // seleção - com mais de uma viagem salva, o app parecia mostrar dados velhos.
+  const selectedTripIdRef = useRef(null);
+
   // Monitora a viagem atual do usuário (apenas viagens ativas)
   useEffect(() => {
     if (!user) {
@@ -67,13 +72,20 @@ export const TripProvider = ({ children }) => {
       }));
       setTrips(allTrips);
 
-      // Define currentTrip como a primeira viagem ATIVA (não arquivada)
-      const activeTrip = allTrips.find(trip => trip.status !== 'archived');
-      
+      // Mantém a viagem que o usuário escolheu (se ela ainda existir).
+      // Só cai para a primeira viagem ativa quando não há escolha válida.
+      const selectedTrip = selectedTripIdRef.current
+        ? allTrips.find(trip => trip.id === selectedTripIdRef.current)
+        : null;
+
+      const activeTrip = selectedTrip || allTrips.find(trip => trip.status !== 'archived');
+
       if (activeTrip) {
+        selectedTripIdRef.current = activeTrip.id;
         setCurrentTrip(activeTrip);
         setParticipants(activeTrip.participants || []);
       } else {
+        selectedTripIdRef.current = null;
         setCurrentTrip(null);
         setParticipants([]);
       }
@@ -108,7 +120,7 @@ export const TripProvider = ({ children }) => {
     });
 
     return unsubscribe;
-  }, [currentTrip]);
+  }, [currentTrip?.id]);
 
   // Monitora despesas da viagem
   useEffect(() => {
@@ -132,7 +144,7 @@ export const TripProvider = ({ children }) => {
     });
 
     return unsubscribe;
-  }, [currentTrip]);
+  }, [currentTrip?.id]);
 
   // Busca dados dos participantes
   useEffect(() => {
@@ -181,6 +193,29 @@ export const TripProvider = ({ children }) => {
     
     fetchParticipants();
   }, [currentTrip]);
+
+  // ========== SELECIONAR VIAGEM ==========
+
+  // Troca a viagem ativa. A escolha fica registrada e sobrevive às
+  // atualizações em tempo real do Firestore.
+  const selectTrip = (tripId) => {
+    const trip = trips.find(item => item.id === tripId);
+
+    if (!trip) {
+      return { success: false, error: 'Viagem não encontrada' };
+    }
+
+    selectedTripIdRef.current = trip.id;
+    setCurrentTrip(trip);
+    setParticipants(trip.participants || []);
+
+    // Zera os dados da viagem anterior para não exibir conteúdo de outra
+    // viagem enquanto os novos snapshots não chegam
+    setEvents([]);
+    setExpenses([]);
+
+    return { success: true };
+  };
 
   // ========== CRIAR VIAGEM ==========
 
@@ -519,7 +554,8 @@ export const TripProvider = ({ children }) => {
   const value = {
     currentTrip,
     trips, // Todas as viagens (ativas e arquivadas)
-    setCurrentTrip, // Função para mudar a viagem atual
+    selectTrip, // Troca a viagem ativa preservando a escolha do usuário
+    setCurrentTrip, // Uso legado; prefira selectTrip
     events,
     expenses,
     participants,

@@ -105,11 +105,51 @@ Ler `exp.splitBetween.length` direto já derrubou a aba História inteira (tela 
 Despesas com `status === 'pendente'` **não entram** nos totais. Despesas sem `status` contam como
 pagas. Financeiro e História precisam usar a mesma regra, senão as abas mostram números diferentes.
 
-### 7. Existe mais de uma viagem
+### 7. Toda exportação leva data E hora no nome do arquivo
 
-`currentTrip` é a **primeira viagem não arquivada** (`status !== 'archived'`). Há viagens arquivadas
-salvas. Ao mexer em qualquer aba, considere: viagem sem eventos, viagem sem despesas, viagem
-arquivada e viagem com dados antigos.
+O navegador não sobrescreve download: exportar duas vezes no mesmo dia com o mesmo nome gera
+`arquivo (1).pdf` e mantém o original intacto. O usuário abre o antigo e conclui, com razão, que
+"os dados não atualizaram".
+
+```js
+// CERTO
+`roteiro-${slug}-${format(new Date(), "yyyy-MM-dd_HH'h'mm")}`
+
+// ERRADO - dois exports no mesmo dia disputam o mesmo nome
+`roteiro-${slug}-${format(new Date(), 'yyyy-MM-dd')}`
+```
+
+Vale para os cinco pontos de exportação: roteiro (PDF), história (PDF/MD/TXT) e financeiro (PDF).
+
+### 8. Ao mudar dados, verifique TODOS os consumidores
+
+Um mesmo dado alimenta várias telas e arquivos. Ao mexer em evento, despesa ou viagem, percorra a
+cadeia inteira antes de dar por pronto:
+
+| Origem | Consumidores que precisam refletir a mudança |
+|--------|----------------------------------------------|
+| `events` | Roteiro (lista + contador), História (texto), PDF do roteiro, PDF/MD/TXT da história |
+| `expenses` | Financeiro (totais e saldos), História (seção financeira), PDF do financeiro |
+| `trip` (datas) | Contagem regressiva, filtro de período da História, cabeçalho dos PDFs |
+
+Checagens que evitam o erro clássico de "exportou desatualizado":
+
+- A exportação usa o **mesmo conjunto** que a tela mostra? (O PDF da História já listou eventos
+  fora do período enquanto o texto usava os filtrados.)
+- O `useMemo` tem no array de dependências tudo que ele lê?
+- O nome do arquivo muda a cada exportação? (ver item 7)
+
+### 9. Existe mais de uma viagem
+
+Por padrão `currentTrip` é a **primeira viagem não arquivada** (`status !== 'archived'`), mas a
+escolha do usuário tem prioridade e é guardada em `selectedTripIdRef` no `TripContext`.
+
+Para trocar de viagem use **`selectTrip(tripId)`**, nunca `setCurrentTrip` direto — este último não
+registra a escolha, então o próximo snapshot do Firestore volta para a primeira viagem ativa e o
+app parece "não ter atualizado".
+
+Ao mexer em qualquer aba, considere: viagem sem eventos, viagem sem despesas, viagem arquivada e
+viagem com dados antigos.
 
 ---
 

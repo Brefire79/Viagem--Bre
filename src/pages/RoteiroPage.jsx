@@ -462,7 +462,9 @@ const RoteiroPage = () => {
       const { pdfExporter, printPdfFromUrl } = await import('../utils/pdfExporter');
 
       const itineraryData = buildItineraryData();
-      const filename = `roteiro-${slugify(currentTrip.name)}-${format(new Date(), 'yyyy-MM-dd')}`;
+      // Data E hora no nome: exportar duas vezes no mesmo dia precisa gerar dois
+      // arquivos distintos, senão o antigo continua no disco e parece desatualizado
+      const filename = `roteiro-${slugify(currentTrip.name)}-${format(new Date(), "yyyy-MM-dd_HH'h'mm")}`;
 
       const result = await pdfExporter.exportItinerary(itineraryData, filename, {
         ...printOptions,

@@ -51,6 +51,11 @@ const formatUtcDate = (date, { withYear = true } = {}) => {
     : `${day} de ${month}`;
 };
 
+// Carimbo com data E hora no nome do arquivo. Só com a data, exportar duas vezes
+// no mesmo dia fazia o navegador salvar "arquivo (1)" e manter o antigo intacto —
+// abrir o arquivo original dava a impressão de que os dados não atualizaram.
+const exportStamp = () => format(new Date(), "yyyy-MM-dd_HH'h'mm");
+
 const HistoriaPage = () => {
   const { user } = useAuth();
   const { currentTrip, events, expenses, participants, participantsData } = useTrip();
@@ -65,12 +70,9 @@ const HistoriaPage = () => {
       return;
     }
 
-    // Ordenar eventos por data
-    const sortedEvents = events.length > 0 ? [...events].sort((a, b) => {
-      const dateA = a.date?.toDate?.() || new Date(a.date);
-      const dateB = b.date?.toDate?.() || new Date(b.date);
-      return dateA - dateB;
-    }) : [];
+    // Usa os mesmos eventos que a história descreve (já filtrados pelo período
+    // e ordenados), para o PDF não listar evento que o texto não menciona
+    const sortedEvents = tripStory.events || [];
 
     // Preparar dados para exportação
     const exportData = {
@@ -84,7 +86,7 @@ const HistoriaPage = () => {
       events: sortedEvents
     };
 
-    const filename = `historia-${currentTrip.name.toLowerCase().replace(/\s+/g, '-')}-${format(new Date(), 'yyyy-MM-dd')}`;
+    const filename = `historia-${currentTrip.name.toLowerCase().replace(/\s+/g, '-')}-${exportStamp()}`;
 
     // Carrega o gerador de PDF sob demanda para não pesar a abertura da aba
     const { pdfExporter } = await import('../utils/pdfExporter');
@@ -351,7 +353,9 @@ const HistoriaPage = () => {
     story += `---\n\n`;
     story += `*História gerada automaticamente em ${format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}*\n`;
 
-    return { text: story };
+    // Devolve também os eventos já filtrados/ordenados, para que a exportação
+    // use exatamente o mesmo conjunto que a história descreve
+    return { text: story, events: sortedEvents };
   }, [currentTrip, currentTrip?.startDate, currentTrip?.endDate, events, expenses, participants, participantsData]);
 
   const handleCopy = async () => {
@@ -368,7 +372,7 @@ const HistoriaPage = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `historia-viagem-${format(new Date(), 'yyyy-MM-dd')}.md`;
+      a.download = `historia-viagem-${currentTrip?.name?.replace(/\s+/g, '-').toLowerCase() || 'viagem'}-${exportStamp()}.md`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -389,7 +393,7 @@ const HistoriaPage = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `historia-viagem-${currentTrip.name?.replace(/\s+/g, '-').toLowerCase() || 'viagem'}-${format(new Date(), 'yyyy-MM-dd')}.txt`;
+      a.download = `historia-viagem-${currentTrip.name?.replace(/\s+/g, '-').toLowerCase() || 'viagem'}-${exportStamp()}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -507,13 +511,25 @@ const HistoriaPage = () => {
               </motion.div>
               História da Viagem
             </motion.h1>
-            <motion.p 
+            <motion.p
               className="text-sand-500"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
             >
               Um resumo automático da sua experiência, pronto para compartilhar
+            </motion.p>
+
+            {/* Mostra de onde vem o conteúdo, para conferir antes de exportar */}
+            <motion.p
+              className="text-xs text-sand-500 mt-2"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+            >
+              {currentTrip.name} • {tripStory.events?.length ?? 0}{' '}
+              {(tripStory.events?.length ?? 0) === 1 ? 'evento' : 'eventos'} no período •{' '}
+              {expenses.length} {expenses.length === 1 ? 'despesa' : 'despesas'} • atualizado agora
             </motion.p>
           </div>
 

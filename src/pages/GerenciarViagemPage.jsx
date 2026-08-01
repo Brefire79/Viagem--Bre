@@ -10,7 +10,7 @@ import { ptBR } from 'date-fns/locale';
 
 const GerenciarViagemPage = () => {
   const { user, updateDisplayName } = useAuth();
-  const { currentTrip, participantsData, updateTrip, addParticipant, removeParticipant, deleteTrip, trips, setCurrentTrip } = useTrip();
+  const { currentTrip, participantsData, updateTrip, addParticipant, removeParticipant, deleteTrip, trips, selectTrip } = useTrip();
   
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(currentTrip?.name || '');
@@ -297,7 +297,7 @@ const GerenciarViagemPage = () => {
               onClick={() => {
                 const activeTrip = trips.find(trip => trip.status !== 'archived');
                 if (activeTrip) {
-                  setCurrentTrip(activeTrip);
+                  selectTrip(activeTrip.id);
                   setSuccess('Voltou para viagem ativa');
                   setTimeout(() => setSuccess(''), 3000);
                 } else {
@@ -473,7 +473,7 @@ const GerenciarViagemPage = () => {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
-                            setCurrentTrip(trip);
+                            selectTrip(trip.id);
                             setSuccess('Visualizando viagem arquivada');
                             setTimeout(() => setSuccess(''), 3000);
                           }}
