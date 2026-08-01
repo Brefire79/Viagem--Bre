@@ -1,5 +1,11 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import {
+  COLOR, TYPE_COLOR, PAGE,
+  setFill, setInk, setStroke,
+  fieldLabel, dataText, perforation, hairline,
+  drawHeader, drawFieldStrip, drawFooters
+} from './pdfTheme';
 
 // Caracteres fora do WinAnsi (emojis, por exemplo) fazem o jsPDF trocar a string
 // inteira para UTF-16, enquanto a fonte padrão continua WinAnsi - o resultado é o
@@ -124,123 +130,152 @@ export class PDFExporter {
   }
 
   /**
-   * Exporta dados financeiros como PDF
-   * @param {Object} data - Dados da viagem e despesas
-   * @param {string} filename - Nome do arquivo
+   * Exporta o relatório financeiro da viagem como PDF, no mesmo sistema visual
+   * do roteiro. Os valores saem em fonte monoespaçada e alinhados à direita,
+   * então as casas decimais ficam em coluna e dá para conferir de bater o olho.
+   *
+   * @param {Object} data - { trip, expenses, summary }
+   * @param {string} filename - Nome do arquivo (sem extensão)
    * @returns {Promise<boolean>}
    */
   async exportFinanceReport(data, filename = 'relatorio-financeiro') {
     try {
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+      const { margin, width: pageW, contentWidth, bottomLimit } = PAGE;
+      const trip = data.trip || {};
+      const summary = data.summary || {};
+
+      const money = (value) => {
+        const number = Number(value);
+        return `R$ ${(isNaN(number) ? 0 : number).toFixed(2).replace('.', ',')}`;
+      };
+
+      // Datas da viagem em UTC (evita cair um dia antes no fuso do Brasil)
+      const formatTripDate = (value) => {
+        if (!value) return '';
+        if (typeof value === 'string' && value.includes('-')) {
+          const [year, month, day] = value.split('-').map(Number);
+          if (!year || !month || !day) return '';
+          return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+        }
+        const parsed = value?.toDate ? value.toDate() : new Date(value);
+        if (isNaN(parsed)) return '';
+        return `${String(parsed.getUTCDate()).padStart(2, '0')}/${String(parsed.getUTCMonth() + 1).padStart(2, '0')}/${parsed.getUTCFullYear()}`;
+      };
+
+      const periodo = [formatTripDate(trip.startDate), formatTripDate(trip.endDate)]
+        .filter(Boolean)
+        .join(' — ');
+
+      // ===== Cabeçalho =====
+      let y = drawHeader(pdf, {
+        kind: 'relatório financeiro',
+        title: toPdfSafeText(trip.name) || 'Viagem',
+        subtitle: toPdfSafeText(trip.destination),
+        stampLabel: 'total',
+        stampValue: summary.total != null ? money(summary.total) : ''
       });
 
-      const margin = 20;
-      let yPosition = margin;
+      // ===== Faixa de campos =====
+      y = drawFieldStrip(pdf, [
+        { label: 'despesas', value: summary.count != null ? String(summary.count) : '' },
+        { label: 'gasto médio', value: summary.average != null ? money(summary.average) : '' },
+        { label: 'pendente', value: summary.totalPending ? money(summary.totalPending) : '' },
+        { label: 'período', value: periodo }
+      ], y);
 
-      // Configurações de fonte
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(18);
-      pdf.setTextColor(0, 51, 102); // Cor ocean
-
-      // Título
-      pdf.text('Relatório Financeiro da Viagem', margin, yPosition);
-      yPosition += 15;
-
-      // Informações da viagem
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(12);
-      pdf.setTextColor(0, 0, 0);
-
-      if (data.trip) {
-        pdf.text(toPdfSafeText(`Viagem: ${data.trip.name}`), margin, yPosition);
-        yPosition += 7;
-
-        if (data.trip.destination) {
-          pdf.text(toPdfSafeText(`Destino: ${data.trip.destination}`), margin, yPosition);
-          yPosition += 7;
+      const ensureSpace = (needed) => {
+        if (y + needed > bottomLimit) {
+          pdf.addPage();
+          y = margin + 6;
+          return true;
         }
-        
-        if (data.trip.startDate && data.trip.endDate) {
-          // Conversão local para evitar problemas UTC
-          const formatLocalDate = (dateStr) => {
-            if (typeof dateStr === 'string') {
-              const [year, month, day] = dateStr.split('-').map(Number);
-              const localDate = new Date(year, month - 1, day);
-              return localDate.toLocaleDateString('pt-BR');
-            }
-            return new Date(dateStr).toLocaleDateString('pt-BR');
-          };
-          const startDate = formatLocalDate(data.trip.startDate);
-          const endDate = formatLocalDate(data.trip.endDate);
-          pdf.text(`Período: ${startDate} - ${endDate}`, margin, yPosition);
-          yPosition += 7;
-        }
-      }
+        return false;
+      };
 
-      yPosition += 10;
+      // ===== Despesas =====
+      const expenses = Array.isArray(data.expenses) ? data.expenses : [];
 
-      // Resumo financeiro
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(14);
-      pdf.text('Resumo Financeiro', margin, yPosition);
-      yPosition += 10;
+      if (!expenses.length) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(10.5);
+        setInk(pdf, COLOR.muted);
+        pdf.text('Nenhuma despesa registrada nesta viagem.', margin, y + 4);
+      } else {
+        fieldLabel(pdf, 'despesas detalhadas', margin, y, { size: 7, color: COLOR.ocean, spacing: 1 });
+        y += 6;
 
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(11);
+        const dateWidth = 22;
+        const valueWidth = 30;
+        const textX = margin + dateWidth;
+        const textWidth = contentWidth - dateWidth - valueWidth - 4;
 
-      if (data.summary) {
-        pdf.text(`Total Gasto: R$ ${data.summary.total.toFixed(2)}`, margin, yPosition);
-        yPosition += 6;
-        pdf.text(`Número de Despesas: ${data.summary.count}`, margin, yPosition);
-        yPosition += 6;
-        pdf.text(`Gasto Médio: R$ ${data.summary.average.toFixed(2)}`, margin, yPosition);
-        yPosition += 10;
-      }
+        expenses.forEach((expense, index) => {
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(10);
+          const descLines = pdf.splitTextToSize(
+            toPdfSafeText(expense.description) || 'Despesa sem descrição',
+            textWidth
+          );
 
-      // Lista de despesas
-      if (data.expenses && data.expenses.length > 0) {
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(14);
-        pdf.text('Despesas Detalhadas', margin, yPosition);
-        yPosition += 10;
+          const height = descLines.length * 4.8 + 8.5;
+          ensureSpace(height);
+          const top = y;
 
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(10);
+          // Data, em monoespaçada
+          const date = expense.date?.toDate ? expense.date.toDate() : new Date(expense.date);
+          const dateLabel = isNaN(date)
+            ? '--/--'
+            : `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+          dataText(pdf, dateLabel, margin, top + 3.6, { size: 9, color: COLOR.muted });
 
-        data.expenses.forEach((expense, index) => {
-          if (yPosition > 250) { // Nova página se necessário
-            pdf.addPage();
-            yPosition = margin;
+          // Descrição
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(10);
+          setInk(pdf, COLOR.ink);
+          let cursorY = top + 3.6;
+          descLines.forEach((line) => {
+            pdf.text(line, textX, cursorY);
+            cursorY += 4.8;
+          });
+
+          // Categoria e pagador
+          const category = toPdfSafeText(expense.category) || 'outros';
+          const categoryColor = TYPE_COLOR[category] || COLOR.muted;
+          setFill(pdf, categoryColor);
+          pdf.rect(textX, cursorY - 2.4, 2.1, 2.1, 'F');
+
+          const detalhe = [category, expense.paidByName ? `pago por ${toPdfSafeText(expense.paidByName)}` : '']
+            .filter(Boolean)
+            .join(' · ');
+          fieldLabel(pdf, detalhe, textX + 3.6, cursorY - 0.6, { size: 6.2, spacing: 0.6 });
+
+          // Valor, alinhado à direita em monoespaçada
+          const pendente = expense.status === 'pendente';
+          dataText(pdf, money(expense.amount), pageW - margin, top + 3.6, {
+            size: 10, color: pendente ? COLOR.muted : COLOR.ocean, align: 'right'
+          });
+
+          if (pendente) {
+            fieldLabel(pdf, 'pendente', pageW - margin, top + 7.6, {
+              size: 5.8, color: COLOR.terracotta, spacing: 0.6, align: 'right'
+            });
           }
 
-          const date = expense.date?.toDate ? 
-            expense.date.toDate().toLocaleDateString('pt-BR') : 
-            new Date(expense.date).toLocaleDateString('pt-BR');
+          y = top + height;
 
-          const amount = Number(expense.amount);
-          const safeAmount = isNaN(amount) ? 0 : amount;
-
-          pdf.text(toPdfSafeText(`${index + 1}. ${expense.description}`), margin, yPosition);
-          yPosition += 5;
-          pdf.text(`   Valor: R$ ${safeAmount.toFixed(2)} | Data: ${date}`, margin + 5, yPosition);
-          yPosition += 5;
-          pdf.text(toPdfSafeText(`   Categoria: ${expense.category || 'outros'} | Pago por: ${expense.paidByName || 'N/A'}`), margin + 5, yPosition);
-          yPosition += 8;
+          if (index < expenses.length - 1) {
+            perforation(pdf, margin, y - 2.5, pageW - margin, { dash: [0.6, 1.4] });
+          }
         });
       }
 
-      // Rodapé
-      const pageCount = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        pdf.setPage(i);
-        pdf.setFontSize(8);
-        pdf.setTextColor(128, 128, 128);
-        pdf.text(`Página ${i} de ${pageCount}`, margin, 285);
-        pdf.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, margin, 290);
-      }
+      // ===== Rodapé =====
+      drawFooters(pdf, {
+        docLabel: toPdfSafeText(trip.name),
+        generatedAt: `${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      });
 
       pdf.save(`${filename}.pdf`);
       return true;
@@ -250,10 +285,13 @@ export class PDFExporter {
     }
   }
 
-  /**
-   * Exporta o roteiro completo da viagem como PDF (texto vetorial, pronto para
-   * impressão). Não depende de html2canvas: monta o documento a partir dos
-   * dados, então o PDF sai sempre com o roteiro atualizado e legível.
+  /**
+   * Exporta o roteiro completo da viagem como PDF, na linguagem visual de um
+   * bilhete de embarque: canhoto destacável por dia, picotes, rótulos de campo
+   * em caixa alta e horários em fonte monoespaçada.
+   *
+   * Não depende de html2canvas: monta o documento a partir dos dados, então o
+   * PDF sai sempre com o roteiro atualizado, leve e com texto selecionável.
    *
    * @param {Object} data - { trip, days, summary, participants }
    * @param {string} filename - Nome do arquivo (sem extensão)
@@ -274,36 +312,48 @@ export class PDFExporter {
     try {
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-      // Paleta alinhada ao tema do app (ocean / aqua / sand / dark)
-      const COLOR = {
-        ocean: [30, 71, 99],
-        aqua: [188, 90, 46],
-        dark: [27, 42, 56],
-        muted: [117, 106, 82],
-        line: [226, 215, 190],
-        sand: [247, 241, 228],
-        sandDeep: [239, 231, 213]
-      };
-      const TYPE_COLOR = {
-        voo: COLOR.ocean,
-        transfer: COLOR.aqua,
-        hospedagem: [139, 92, 246],
-        passeio: [34, 197, 94],
-        alimentacao: [249, 115, 22]
-      };
+      const { margin, width: pageW, contentWidth, bottomLimit } = PAGE;
+      const topAfterBreak = margin + 6;
 
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
-      const margin = 14;
-      const contentW = pageW - margin * 2;
-      const bottomLimit = pageH - 20; // espaço reservado para o rodapé
-      const topAfterBreak = margin + 4;
+      const trip = data.trip || {};
+      const days = Array.isArray(data.days) ? data.days : [];
+      const summary = data.summary || {};
 
-      let y = margin;
+      // ===== Cabeçalho =====
+      let y = drawHeader(pdf, {
+        kind: 'roteiro de viagem',
+        title: toPdfSafeText(trip.name) || 'Viagem',
+        subtitle: toPdfSafeText(trip.destination),
+        stampLabel: 'período',
+        stampValue: toPdfSafeText(trip.period)
+      });
 
-      const setFill = (c) => pdf.setFillColor(c[0], c[1], c[2]);
-      const setText = (c) => pdf.setTextColor(c[0], c[1], c[2]);
-      const setDraw = (c) => pdf.setDrawColor(c[0], c[1], c[2]);
+      // ===== Faixa de campos =====
+      const participantNames = (Array.isArray(data.participants) ? data.participants : [])
+        .map(toPdfSafeText)
+        .filter(Boolean);
+
+      y = drawFieldStrip(pdf, [
+        { label: 'eventos', value: summary.totalEvents != null ? String(summary.totalEvents) : '' },
+        { label: 'dias', value: summary.totalDays != null ? String(summary.totalDays) : '' },
+        {
+          label: participantNames.length === 1 ? 'viajante' : 'viajantes',
+          value: opts.includeParticipants && participantNames.length ? String(participantNames.length) : ''
+        }
+      ], y);
+
+      // Nomes dos viajantes, discretos, abaixo da faixa
+      if (opts.includeParticipants && participantNames.length) {
+        const linhas = pdf.splitTextToSize(participantNames.join(' · '), contentWidth);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8.5);
+        setInk(pdf, COLOR.muted);
+        linhas.forEach((linha) => {
+          pdf.text(linha, margin, y);
+          y += 4.2;
+        });
+        y += 3;
+      }
 
       // Quebra de página quando o bloco não couber inteiro
       const ensureSpace = (needed) => {
@@ -315,267 +365,207 @@ export class PDFExporter {
         return false;
       };
 
-      const trip = data.trip || {};
-      const days = Array.isArray(data.days) ? data.days : [];
-      const summary = data.summary || {};
+      // Geometria das colunas do "bilhete"
+      const stubWidth = 15;          // canhoto do dia
+      const checkboxWidth = opts.includeChecklist ? 7 : 0;
+      const timeWidth = 16;
+      const dividerX = margin + stubWidth + checkboxWidth + timeWidth;
+      const textX = dividerX + 4;
+      const textWidth = pageW - margin - textX;
 
-      // ===== Cabeçalho da capa =====
-      setFill(COLOR.ocean);
-      pdf.rect(0, 0, pageW, 34, 'F');
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(20);
-      pdf.setTextColor(255, 255, 255);
-      pdf.text('Roteiro da Viagem', margin, 15);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(11);
-      const headerLine = [toPdfSafeText(trip.name), toPdfSafeText(trip.destination)]
-        .filter(Boolean)
-        .join('  -  ');
-      if (headerLine) {
-        pdf.text(pdf.splitTextToSize(headerLine, contentW)[0], margin, 23);
-      }
-
-      pdf.setFontSize(9);
-      pdf.setTextColor(215, 228, 238);
-      const tripPeriod = toPdfSafeText(trip.period);
-      if (tripPeriod) {
-        pdf.text(tripPeriod, margin, 29.5);
-      }
-
-      y = 44;
-
-      // ===== Faixa de resumo =====
-      const summaryBits = [];
-      if (summary.totalEvents != null) {
-        summaryBits.push(`${summary.totalEvents} ${summary.totalEvents === 1 ? 'evento' : 'eventos'}`);
-      }
-      if (summary.totalDays != null) {
-        summaryBits.push(`${summary.totalDays} ${summary.totalDays === 1 ? 'dia com programação' : 'dias com programação'}`);
-      }
-      if (summary.byType && summary.byType.length) {
-        summary.byType.forEach(({ label, count }) => summaryBits.push(`${toPdfSafeText(label)}: ${count}`));
-      }
-
-      if (summaryBits.length) {
-        const summaryLines = pdf.splitTextToSize(summaryBits.join('   |   '), contentW - 8);
-        const boxH = 8 + summaryLines.length * 4.6;
-        setFill(COLOR.sandDeep);
-        pdf.roundedRect(margin, y, contentW, boxH, 2.5, 2.5, 'F');
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(9.5);
-        setText(COLOR.dark);
-        let sy = y + 6;
-        summaryLines.forEach((line) => {
-          pdf.text(line, margin + 4, sy);
-          sy += 4.6;
-        });
-        y += boxH + 5;
-      }
-
-      // ===== Participantes =====
-      if (opts.includeParticipants && Array.isArray(data.participants) && data.participants.length) {
-        const participantNames = data.participants.map(toPdfSafeText).filter(Boolean).join(', ');
-        const partLines = pdf.splitTextToSize(`Viajantes: ${participantNames}`, contentW);
-        ensureSpace(partLines.length * 4.6 + 3);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(9.5);
-        setText(COLOR.muted);
-        partLines.forEach((line) => {
-          pdf.text(line, margin, y);
-          y += 4.6;
-        });
-        y += 3;
-      }
-
-      // ===== Dias e eventos =====
-      if (!days.length) {
-        pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(11);
-        setText(COLOR.muted);
-        pdf.text('Nenhum evento cadastrado neste roteiro.', margin, y + 4);
-        y += 12;
-      }
-
-      // Mede um evento (quebra de linhas + altura) sem desenhar, para decidir
-      // quebras de página antes de começar a escrever o bloco.
+      // Mede um evento sem desenhar, para decidir a quebra de página antes.
+      // A altura acompanha o conteúdo real: sem rótulo de tipo (dado legado),
+      // o bloco encolhe e o fio vertical não sobra embaixo.
       const measureEvent = (event) => {
-        const checkboxW = opts.includeChecklist ? 6.5 : 0;
-        const timeW = 15;
-        const textX = margin + checkboxW + timeW;
-        const textW = contentW - checkboxW - timeW;
+        const typeLabel = toPdfSafeText(event.typeLabel);
 
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(10.5);
-        const titleLines = pdf.splitTextToSize(toPdfSafeText(event.title) || 'Sem título', textW);
+        const titleLines = pdf.splitTextToSize(toPdfSafeText(event.title) || 'Sem título', textWidth);
 
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(9);
+        pdf.setFontSize(8.6);
         const safeLocation = toPdfSafeText(event.location);
         const locationLines = (opts.includeLocation && safeLocation)
-          ? pdf.splitTextToSize(`Local: ${safeLocation}`, textW)
+          ? pdf.splitTextToSize(safeLocation, textWidth)
           : [];
 
         const safeDescription = toPdfSafeText(event.description);
         const descLines = (opts.includeDescription && safeDescription)
-          ? pdf.splitTextToSize(safeDescription, textW - 2)
+          ? pdf.splitTextToSize(safeDescription, textWidth)
           : [];
 
-        const blockH =
-          4 + // badge do tipo
-          titleLines.length * 4.8 +
-          locationLines.length * 4.2 +
-          (descLines.length ? descLines.length * 4.2 + 2 : 0) +
-          6;
+        // Onde a primeira linha do título assenta, em relação ao topo do bloco
+        const titleStart = typeLabel ? 8 : 4.2;
 
-        return { checkboxW, textX, titleLines, locationLines, descLines, blockH };
+        const contentHeight =
+          titleStart +
+          titleLines.length * 4.9 +
+          locationLines.length * 4.1 +
+          (descLines.length ? descLines.length * 4.1 + 1.5 : 0);
+
+        return { typeLabel, titleLines, locationLines, descLines, titleStart, contentHeight, height: contentHeight + 3 };
       };
+
+      if (!days.length) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(10.5);
+        setInk(pdf, COLOR.muted);
+        pdf.text('Nenhum evento cadastrado neste roteiro.', margin, y + 4);
+        y += 12;
+      }
 
       days.forEach((day) => {
         const dayEvents = Array.isArray(day.events) ? day.events : [];
 
-        // Cabeçalho do dia só entra na página se o primeiro evento couber junto,
-        // evitando um cabeçalho órfão no rodapé.
-        const firstEventH = dayEvents.length ? measureEvent(dayEvents[0]).blockH : 10;
-        ensureSpace(14 + firstEventH);
+        // O cabeçalho do dia só entra se o primeiro evento couber junto
+        const firstEventHeight = dayEvents.length ? measureEvent(dayEvents[0]).height : 10;
+        ensureSpace(15 + firstEventHeight);
 
-        setFill(COLOR.sandDeep);
-        pdf.roundedRect(margin, y, contentW, 10, 2, 2, 'F');
-        setFill(COLOR.ocean);
-        pdf.rect(margin, y, 1.8, 10, 'F');
+        // ===== Cupom do dia: canhoto + corpo =====
+        const couponHeight = 13;
 
+        // Corpo em papel
+        setFill(pdf, COLOR.sandDeep);
+        pdf.rect(margin, y, contentWidth, couponHeight, 'F');
+
+        // Canhoto terracota
+        setFill(pdf, COLOR.terracotta);
+        pdf.rect(margin, y, stubWidth, couponHeight, 'F');
+
+        // Dia e mês dentro do canhoto
+        const dayNumber = toPdfSafeText(day.dayNumber || '');
+        const monthShort = toPdfSafeText(day.monthShort || '');
+        if (dayNumber) {
+          dataText(pdf, dayNumber, margin + stubWidth / 2, y + 7.4, {
+            size: 13, color: COLOR.white, align: 'center'
+          });
+        }
+        if (monthShort) {
+          fieldLabel(pdf, monthShort, margin + stubWidth / 2, y + 11, {
+            size: 5.5, color: [246, 220, 205], spacing: 0.5, align: 'center'
+          });
+        }
+
+        // Picote vertical separando canhoto e corpo
+        setStroke(pdf, COLOR.white);
+        pdf.setLineWidth(0.4);
+        pdf.setLineDashPattern([0.9, 1.1], 0);
+        pdf.line(margin + stubWidth, y + 1.4, margin + stubWidth, y + couponHeight - 1.4);
+        pdf.setLineDashPattern([], 0);
+
+        // Data por extenso e dia da semana
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(11.5);
-        setText(COLOR.ocean);
-        pdf.text(toPdfSafeText(day.title), margin + 5, y + 6.6);
+        pdf.setFontSize(11);
+        setInk(pdf, COLOR.ocean);
+        pdf.text(toPdfSafeText(day.title), margin + stubWidth + 5, y + 6.2);
 
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8.5);
-        setText(COLOR.muted);
-        const dayMeta = [toPdfSafeText(day.weekday), `${dayEvents.length} ${dayEvents.length === 1 ? 'evento' : 'eventos'}`]
-          .filter(Boolean)
-          .join('  |  ');
-        pdf.text(dayMeta, pageW - margin - 3, y + 6.6, { align: 'right' });
+        fieldLabel(pdf, toPdfSafeText(day.weekday), margin + stubWidth + 5, y + 10.4, {
+          size: 6.2, spacing: 0.7
+        });
 
-        y += 14;
+        fieldLabel(pdf, `${dayEvents.length} ${dayEvents.length === 1 ? 'evento' : 'eventos'}`,
+          pageW - margin - 6, y + 8.4, { size: 6.2, spacing: 0.6, align: 'right' });
 
-        dayEvents.forEach((event) => {
-          // Pré-calcula a altura do bloco para não cortar o evento entre páginas
-          const { checkboxW, textX, titleLines, locationLines, descLines, blockH } = measureEvent(event);
+        y += couponHeight + 6;
 
-          ensureSpace(blockH);
-          const blockTop = y;
+        // ===== Eventos do dia =====
+        dayEvents.forEach((event, eventIndex) => {
+          const { typeLabel, titleLines, locationLines, descLines, titleStart, contentHeight, height } = measureEvent(event);
+
+          ensureSpace(height);
+          const top = y;
 
           // Caixa para marcar no papel
           if (opts.includeChecklist) {
-            setDraw(COLOR.muted);
-            pdf.setLineWidth(0.3);
-            pdf.rect(margin, blockTop + 1.2, 4, 4, 'S');
+            setStroke(pdf, COLOR.rule);
+            pdf.setLineWidth(0.35);
+            pdf.rect(margin + stubWidth, top + 0.6, 3.8, 3.8, 'S');
           }
 
-          // Horário
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(10);
-          setText(COLOR.ocean);
-          pdf.text(toPdfSafeText(event.time) || '--:--', margin + checkboxW, blockTop + 4.6);
+          // Horário, em monoespaçada — a coluna de dados do bilhete
+          dataText(pdf, toPdfSafeText(event.time) || '--:--',
+            margin + stubWidth + checkboxWidth, top + 3.9,
+            { size: 10, color: COLOR.terracotta });
 
-          // Etiqueta do tipo
+          // Fio vertical separando dados do conteúdo, na altura exata do bloco
+          setStroke(pdf, COLOR.rule);
+          pdf.setLineWidth(0.25);
+          pdf.line(dividerX, top - 1, dividerX, top + contentHeight - 2);
+
+          // Rótulo do tipo: quadrado de cor + texto espaçado
           const typeColor = TYPE_COLOR[event.type] || COLOR.muted;
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(7.5);
-          const typeLabel = toPdfSafeText(event.typeLabel).toUpperCase();
-          if (typeLabel) {
-            const labelW = pdf.getTextWidth(typeLabel) + 4;
-            setFill(typeColor);
-            pdf.roundedRect(textX, blockTop, labelW, 4.6, 1.2, 1.2, 'F');
-            pdf.setTextColor(255, 255, 255);
-            pdf.text(typeLabel, textX + 2, blockTop + 3.3);
-          }
+          let cursorY = top + titleStart;
 
-          let ey = blockTop + 9.4;
+          if (typeLabel) {
+            setFill(pdf, typeColor);
+            pdf.rect(textX, top + 1.1, 2.1, 2.1, 'F');
+            fieldLabel(pdf, typeLabel, textX + 3.6, top + 3.1, { size: 6.2, color: typeColor, spacing: 0.8 });
+          }
 
           // Título
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(10.5);
-          setText(COLOR.dark);
+          setInk(pdf, COLOR.ink);
           titleLines.forEach((line) => {
-            pdf.text(line, textX, ey);
-            ey += 4.8;
+            pdf.text(line, textX, cursorY);
+            cursorY += 4.9;
           });
 
           // Local
           if (locationLines.length) {
             pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(9);
-            setText(COLOR.muted);
+            pdf.setFontSize(8.6);
+            setInk(pdf, COLOR.muted);
             locationLines.forEach((line) => {
-              pdf.text(line, textX, ey);
-              ey += 4.2;
+              pdf.text(line, textX, cursorY);
+              cursorY += 4.1;
             });
           }
 
           // Descrição
           if (descLines.length) {
-            ey += 1;
+            cursorY += 1.5;
             pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(9);
-            setText(COLOR.dark);
+            pdf.setFontSize(8.6);
+            setInk(pdf, COLOR.ink);
             descLines.forEach((line) => {
-              pdf.text(line, textX + 2, ey);
-              ey += 4.2;
+              pdf.text(line, textX, cursorY);
+              cursorY += 4.1;
             });
           }
 
-          y = ey + 3;
+          y = cursorY + 2.5;
 
-          // Separador sutil entre eventos
-          setDraw(COLOR.line);
-          pdf.setLineWidth(0.2);
-          pdf.line(textX, y - 1.5, pageW - margin, y - 1.5);
+          // Picote entre eventos (menos após o último do dia)
+          if (eventIndex < dayEvents.length - 1) {
+            perforation(pdf, textX, y, pageW - margin, { dash: [0.6, 1.4] });
+            y += 4;
+          }
         });
 
-        y += 4;
+        y += 7;
       });
 
       // ===== Anotações =====
       if (opts.includeNotes) {
-        ensureSpace(40);
+        ensureSpace(46);
         y += 2;
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(11);
-        setText(COLOR.ocean);
-        pdf.text('Anotações', margin, y);
+        fieldLabel(pdf, 'anotações', margin, y, { size: 7, color: COLOR.ocean, spacing: 1 });
         y += 5;
 
-        setDraw(COLOR.line);
-        pdf.setLineWidth(0.25);
         for (let i = 0; i < 8; i++) {
-          if (ensureSpace(8)) {
-            // continua as linhas na nova página
-          }
-          pdf.line(margin, y, pageW - margin, y);
+          ensureSpace(8);
+          perforation(pdf, margin, y, pageW - margin, { dash: [0.5, 1.6] });
           y += 8;
         }
       }
 
-      // ===== Rodapé em todas as páginas =====
-      const generatedAt = `${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-      const pageCount = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        pdf.setPage(i);
-        setDraw(COLOR.line);
-        pdf.setLineWidth(0.3);
-        pdf.line(margin, pageH - 14, pageW - margin, pageH - 14);
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8);
-        setText(COLOR.muted);
-        const safeTripName = toPdfSafeText(trip.name);
-        const footerLeft = safeTripName ? `${safeTripName} - atualizado em ${generatedAt}` : `Atualizado em ${generatedAt}`;
-        pdf.text(pdf.splitTextToSize(footerLeft, contentW - 30)[0], margin, pageH - 9.5);
-        pdf.text(`Página ${i} de ${pageCount}`, pageW - margin, pageH - 9.5, { align: 'right' });
-      }
+      // ===== Rodapé =====
+      drawFooters(pdf, {
+        docLabel: toPdfSafeText(trip.name),
+        generatedAt: `${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      });
 
       if (opts.output === 'print') {
         return { success: true, url: pdf.output('bloburl').toString() };
@@ -603,36 +593,18 @@ export class PDFExporter {
         format: 'a4'
       });
 
-      const margin = 20;
-      const maxWidth = 170;
-      let yPosition = margin;
+      const { margin, width: pageW, contentWidth } = PAGE;
+      const maxWidth = contentWidth;
+      const trip = data.trip || {};
 
-      // Configurações de fonte
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(18);
-      pdf.setTextColor(0, 51, 102); // Cor ocean
+      // ===== Cabeçalho (mesmo sistema do roteiro e do financeiro) =====
+      let yPosition = drawHeader(pdf, {
+        kind: 'história da viagem',
+        title: toPdfSafeText(trip.name) || 'Viagem',
+        subtitle: toPdfSafeText(trip.destination)
+      });
 
-      // Título
-      pdf.text('História da Viagem', margin, yPosition);
-      yPosition += 15;
-
-      // Informações da viagem
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(12);
-      pdf.setTextColor(0, 0, 0);
-
-      if (data.trip) {
-        pdf.text(toPdfSafeText(data.trip.name), margin, yPosition);
-        yPosition += 7;
-
-        const destination = toPdfSafeText(data.trip.destination);
-        if (destination) {
-          pdf.text(destination, margin, yPosition);
-          yPosition += 7;
-        }
-      }
-
-      yPosition += 10;
+      yPosition += 2;
 
       // História.
       // O texto vem em Markdown com emojis; aqui os marcadores viram formatação
@@ -640,10 +612,17 @@ export class PDFExporter {
       // do PDF não suporta são removidos.
       if (data.story) {
         const storyBlocks = String(data.story).split('\n');
+        let tituloPrincipalIgnorado = false;
 
         storyBlocks.forEach((rawLine) => {
           const headingMatch = rawLine.match(/^(#{1,3})\s+(.*)$/);
           const isListItem = /^[-*]\s+/.test(rawLine);
+
+          // O nome da viagem já está no cabeçalho: pula o primeiro título
+          if (headingMatch && headingMatch[1].length === 1 && !tituloPrincipalIgnorado) {
+            tituloPrincipalIgnorado = true;
+            return;
+          }
 
           // Remove marcadores de Markdown e caracteres não suportados
           let content = rawLine
@@ -685,7 +664,7 @@ export class PDFExporter {
           }
 
           const indent = isListItem ? 5 : 0;
-          const prefix = isListItem ? '- ' : '';
+          const prefix = isListItem ? '· ' : ''; // bullet do WinAnsi
           const lines = pdf.splitTextToSize(prefix + content, maxWidth - indent);
 
           lines.forEach((line) => {
@@ -703,12 +682,19 @@ export class PDFExporter {
 
       // Eventos detalhados
       if (data.events && data.events.length > 0) {
-        yPosition += 10;
-        
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(14);
-        pdf.text('Eventos da Viagem', margin, yPosition);
-        yPosition += 10;
+        yPosition += 8;
+
+        // O título não pode ficar sozinho no rodapé: só permanece nesta página
+        // se o primeiro evento couber junto (o laço abaixo quebra a partir de 250)
+        if (yPosition > 236) {
+          pdf.addPage();
+          yPosition = margin + 6;
+        }
+
+        fieldLabel(pdf, 'eventos da viagem', margin, yPosition, { size: 7, color: COLOR.ocean, spacing: 1 });
+        yPosition += 4;
+        perforation(pdf, margin, yPosition, pageW - margin);
+        yPosition += 7;
 
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(10);
@@ -750,15 +736,11 @@ export class PDFExporter {
         });
       }
 
-      // Rodapé
-      const pageCount = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        pdf.setPage(i);
-        pdf.setFontSize(8);
-        pdf.setTextColor(128, 128, 128);
-        pdf.text(`Página ${i} de ${pageCount}`, margin, 285);
-        pdf.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, margin, 290);
-      }
+      // ===== Rodapé =====
+      drawFooters(pdf, {
+        docLabel: toPdfSafeText(trip.name),
+        generatedAt: `${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      });
 
       pdf.save(`${filename}.pdf`);
       return true;

@@ -381,6 +381,9 @@ const RoteiroPage = () => {
       return {
         title: formatUtcDate(utcDate),
         weekday: formatUtcWeekday(utcDate),
+        // Canhoto do bilhete: dia em destaque e mês abreviado
+        dayNumber: String(utcDate.getUTCDate()).padStart(2, '0'),
+        monthShort: MONTH_NAMES[utcDate.getUTCMonth()].slice(0, 3),
         events: groupedEvents[dateKey].map((event) => ({
           time: `${String(event.parsedDate.getUTCHours()).padStart(2, '0')}:${String(event.parsedDate.getUTCMinutes()).padStart(2, '0')}`,
           type: event.type,
