@@ -7,49 +7,7 @@ import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { pageVariants, storyParagraphVariants, buttonVariants, modalOverlayVariants, modalContentVariants } from '../utils/motionVariants';
 import DOMPurify from 'dompurify';
-
-const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-
-// Converte 'yyyy-MM-dd' (ou Timestamp/Date) para o início do dia em UTC.
-// Todo o app grava eventos em UTC, então as comparações de período também
-// precisam ser feitas em UTC para não escorregar um dia no fuso do Brasil.
-const toUtcDayStart = (value) => {
-  if (!value) return null;
-
-  if (typeof value === 'string' && value.includes('-')) {
-    const [year, month, day] = value.split('-').map(Number);
-    if (!year || !month || !day) return null;
-    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-  }
-
-  const parsed = value?.toDate ? value.toDate() : new Date(value);
-  if (isNaN(parsed)) return null;
-
-  return new Date(Date.UTC(
-    parsed.getUTCFullYear(),
-    parsed.getUTCMonth(),
-    parsed.getUTCDate(),
-    0, 0, 0, 0
-  ));
-};
-
-// Mesmo que toUtcDayStart, mas no último instante do dia
-const toUtcDayEnd = (value) => {
-  const start = toUtcDayStart(value);
-  if (!start) return null;
-  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
-};
-
-// Formata uma data usando os componentes UTC (o format() do date-fns usa o fuso
-// local e mostraria o dia anterior para datas gravadas à meia-noite UTC)
-const formatUtcDate = (date, { withYear = true } = {}) => {
-  if (!date || isNaN(date)) return '';
-  const day = date.getUTCDate();
-  const month = MONTH_NAMES[date.getUTCMonth()];
-  return withYear
-    ? `${day} de ${month} de ${date.getUTCFullYear()}`
-    : `${day} de ${month}`;
-};
+import { toUtcDayStart, toUtcDayEnd, formatUtcDate } from '../utils/dateUtils';
 
 // Carimbo com data E hora no nome do arquivo. Só com a data, exportar duas vezes
 // no mesmo dia fazia o navegador salvar "arquivo (1)" e manter o antigo intacto —

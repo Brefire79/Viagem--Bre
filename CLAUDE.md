@@ -51,8 +51,17 @@ format(eventDate, 'd/MM');            // date-fns formata em fuso local
 eventDate.toLocaleDateString('pt-BR'); // idem
 ```
 
-Isso já causou dois bugs reais: eventos da madrugada sumindo da História e datas exibidas um dia
-antes. `HistoriaPage.jsx` tem `toUtcDayStart` / `toUtcDayEnd` / `formatUtcDate` para isso.
+**Use os helpers de `src/utils/dateUtils.js`** — não escreva formatação de data na mão:
+
+`toUtcDayStart` · `toUtcDayEnd` · `utcDateFromKey` · `toUtcDateKey` ·
+`formatUtcDate` · `formatUtcWeekday` · `formatUtcShortDate` · `formatUtcTime`
+
+Isso já causou três bugs reais: eventos da madrugada sumindo da História, datas exibidas um dia
+antes e — o mais duradouro — `format(data, 'EEEE')` mostrando o dia da semana errado no cabeçalho
+de cada dia do Roteiro **em 365 dos 365 dias do ano**.
+
+Exceção: `createdAt` / `endedAt` são instantes reais (serverTimestamp), não datas de calendário.
+Para esses, formatar em fuso local é o correto.
 
 ### 2. Datas da viagem são strings `'yyyy-MM-dd'`
 

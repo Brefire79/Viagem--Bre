@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { pageVariants, cardVariants, buttonVariants, modalOverlayVariants, modalContentVariants, successVariants } from '../utils/motionVariants';
 import TripCountdown from '../components/TripCountdown';
+import { formatUtcDate, formatUtcWeekday, formatUtcShortDate, utcDateFromKey, toUtcDayStart, MONTH_NAMES } from '../utils/dateUtils';
 
 const RoteiroPage = () => {
   const { events, addEvent, updateEvent, deleteEvent, currentTrip, createTrip, updateTrip, participants, participantsData } = useTrip();
@@ -359,19 +360,8 @@ const RoteiroPage = () => {
 
   // ========== IMPRESSÃO / PDF DO ROTEIRO ==========
 
-  const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-
-  // Formata 'yyyy-MM-dd' sem passar por UTC->local (evita cair um dia antes)
-  const formatTripDate = (dateStr) => {
-    if (!dateStr) return '';
-    if (typeof dateStr === 'string' && dateStr.includes('-')) {
-      const [year, month, day] = dateStr.split('-').map(Number);
-      if (!year || !month || !day) return '';
-      return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
-    }
-    const parsed = dateStr?.toDate ? dateStr.toDate() : new Date(dateStr);
-    return isNaN(parsed) ? '' : parsed.toLocaleDateString('pt-BR');
-  };
+  // Formata 'yyyy-MM-dd' em UTC (evita cair um dia antes)
+  const formatTripDate = (dateStr) => formatUtcShortDate(toUtcDayStart(dateStr));
 
   // Nome de arquivo sem acentos/espaços
   const slugify = (value) =>
@@ -386,12 +376,11 @@ const RoteiroPage = () => {
   // garantindo que o impresso reflita o roteiro atualizado.
   const buildItineraryData = () => {
     const days = sortedDates.map((dateKey) => {
-      const [year, month, day] = dateKey.split('-').map(Number);
-      const utcDate = new Date(Date.UTC(year, month - 1, day));
+      const utcDate = utcDateFromKey(dateKey);
 
       return {
-        title: `${day} de ${MONTH_NAMES[month - 1]} de ${year}`,
-        weekday: format(utcDate, 'EEEE', { locale: ptBR }),
+        title: formatUtcDate(utcDate),
+        weekday: formatUtcWeekday(utcDate),
         events: groupedEvents[dateKey].map((event) => ({
           time: `${String(event.parsedDate.getUTCHours()).padStart(2, '0')}:${String(event.parsedDate.getUTCMinutes()).padStart(2, '0')}`,
           type: event.type,
@@ -823,11 +812,7 @@ const RoteiroPage = () => {
                       })()}
                     </h2>
                     <p className="text-xs text-sand-500">
-                      {(() => {
-                        const [year, month, day] = dateKey.split('-').map(Number);
-                        const utcDate = new Date(Date.UTC(year, month - 1, day));
-                        return format(utcDate, "EEEE", { locale: ptBR });
-                      })()}
+                      {formatUtcWeekday(utcDateFromKey(dateKey))}
                     </p>
                   </div>
                 </div>
