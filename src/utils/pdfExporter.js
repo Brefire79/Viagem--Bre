@@ -180,8 +180,8 @@ export class PDFExporter {
       // ===== Faixa de campos =====
       y = drawFieldStrip(pdf, [
         { label: 'despesas', value: summary.count != null ? String(summary.count) : '' },
-        { label: 'gasto médio', value: summary.average != null ? money(summary.average) : '' },
-        { label: 'pendente', value: summary.totalPending ? money(summary.totalPending) : '' },
+        { label: 'pago', value: summary.totalPaid != null ? money(summary.totalPaid) : '' },
+        { label: 'a pagar', value: summary.totalPending ? money(summary.totalPending) : '' },
         { label: 'período', value: periodo }
       ], y);
 

@@ -69,10 +69,12 @@ self.addEventListener('fetch', (event) => {
   // Ignora requisições que não são GET
   if (event.request.method !== 'GET') return;
   
-  // Ignora requisições para Firebase e APIs externas
+  // Ignora requisições para Firebase e APIs externas. A cotação tem cache
+  // próprio no localStorage, com data - servir uma resposta velha do cache aqui
+  // faria a tela mostrar taxa antiga como se fosse do dia.
   if (event.request.url.includes('firestore.googleapis.com') ||
       event.request.url.includes('firebase') ||
-      event.request.url.includes('api.exchangerate')) {
+      event.request.url.includes('open.er-api.com')) {
     return;
   }
 

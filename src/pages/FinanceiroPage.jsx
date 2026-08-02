@@ -56,11 +56,15 @@ const FinanceiroPage = () => {
         ...expense,
         paidByName: getParticipantName(expense.paidBy)
       })),
+      // O relatório mostra os mesmos números do topo da tela: o total é tudo que
+      // foi lançado, com pago e pendente discriminados. Antes o "gasto médio"
+      // dividia só o total pago pela contagem de TODAS as despesas.
       summary: {
-        total: calculations.total,
+        total: calculations.totalGeral,
+        totalPaid: calculations.total,
+        totalPending: calculations.totalPending,
         count: sortedExpenses.length,
-        average: calculations.total / sortedExpenses.length,
-        totalPending: calculations.totalPending
+        average: sortedExpenses.length > 0 ? calculations.totalGeral / sortedExpenses.length : 0
       }
     };
 
@@ -136,9 +140,18 @@ const FinanceiroPage = () => {
     const total = paidExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
     const totalPending = pendingExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
 
-    // Total por categoria (despesas pagas)
-    const byCategory = paidExpenses.reduce((acc, exp) => {
-      acc[exp.category] = (acc[exp.category] || 0) + Number(exp.amount);
+    // Tudo que já foi lançado na viagem, pago ou não. É esse o número que
+    // responde "quanto essa viagem custa" - o usuário lança uma conta pendente
+    // (hotel, ingresso a pagar) e espera ver o compromisso aparecer em algum
+    // lugar. `total` continua só com os pagos porque é dele que saem os saldos
+    // de quem deve a quem, a História e o relatório.
+    const totalGeral = total + totalPending;
+
+    // Total por categoria. `byCategory` é sobre tudo que foi lançado, para que
+    // as fatias fechem com o totalGeral exibido no topo.
+    const byCategory = expenses.reduce((acc, exp) => {
+      const categoria = exp.category || 'outros';
+      acc[categoria] = (acc[categoria] || 0) + Number(exp.amount || 0);
       return acc;
     }, {});
 
@@ -186,6 +199,9 @@ const FinanceiroPage = () => {
     return {
       total,
       totalPending,
+      totalGeral,
+      paidCount: paidExpenses.length,
+      pendingCount: pendingExpenses.length,
       byCategory,
       paidByPerson,
       shouldPayPerPerson,
@@ -407,21 +423,35 @@ const FinanceiroPage = () => {
       >
         <div className="text-center mb-4 md:mb-6">
           <p className="text-xs md:text-sm opacity-80 uppercase tracking-wider mb-2">Total da Viagem</p>
-          <motion.p 
+          <motion.p
             className="text-4xl md:text-5xl lg:text-6xl font-black"
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
           >
-            {formatCurrency(calculations.total)}
+            {formatCurrency(calculations.totalGeral)}
           </motion.p>
+
+          {/* Pago e pendente lado a lado. Antes o topo mostrava só o pago: quem
+              lançava uma conta pendente via o número não se mexer e concluía
+              que o app não tinha registrado a despesa. */}
+          <div className="flex justify-center gap-3 mt-3 flex-wrap">
+            <span className="bg-white bg-opacity-20 backdrop-blur-sm rounded-full px-3 py-1 text-xs md:text-sm font-semibold">
+              ✓ {formatCurrency(calculations.total)} pago
+            </span>
+            {calculations.totalPending > 0 && (
+              <span className="bg-orange-500 bg-opacity-90 rounded-full px-3 py-1 text-xs md:text-sm font-semibold">
+                ⏳ {formatCurrency(calculations.totalPending)} a pagar
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
           {Object.entries(categories).map(([key, { icon: Icon, label }], index) => {
             const amount = calculations.byCategory[key] || 0;
             if (amount === 0) return null;
-            const percentage = calculations.total > 0 ? (amount / calculations.total) * 100 : 0;
+            const percentage = calculations.totalGeral > 0 ? (amount / calculations.totalGeral) * 100 : 0;
 
             return (
               <motion.div 
@@ -445,12 +475,12 @@ const FinanceiroPage = () => {
         <div className="flex justify-center gap-6 md:gap-8 text-center pt-4 border-t border-white border-opacity-30">
           <div>
             <p className="text-xs opacity-80 mb-1">Despesas Pagas</p>
-            <p className="text-xl md:text-2xl font-bold">{expenses.filter(e => !e.status || e.status === 'pago').length}</p>
+            <p className="text-xl md:text-2xl font-bold">{calculations.paidCount}</p>
           </div>
-          {calculations.totalPending > 0 && (
+          {calculations.pendingCount > 0 && (
             <div>
               <p className="text-xs opacity-80 mb-1">Pendentes</p>
-              <p className="text-xl md:text-2xl font-bold text-orange-200">{expenses.filter(e => e.status === 'pendente').length}</p>
+              <p className="text-xl md:text-2xl font-bold text-orange-200">{calculations.pendingCount}</p>
             </div>
           )}
           <div>
@@ -458,20 +488,6 @@ const FinanceiroPage = () => {
             <p className="text-xl md:text-2xl font-bold">{participants.length}</p>
           </div>
         </div>
-        
-        {/* Aviso de despesas pendentes */}
-        {calculations.totalPending > 0 && (
-          <motion.div
-            className="mt-4 bg-orange-500 bg-opacity-90 backdrop-blur-sm rounded-lg p-3 text-center"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-          >
-            <p className="text-sm font-semibold">
-              ⚠️ {formatCurrency(calculations.totalPending)} em despesas pendentes
-            </p>
-          </motion.div>
-        )}
       </motion.div>
 
       {/* 2️⃣ BLOCO "SUA SITUAÇÃO" */}
@@ -640,8 +656,11 @@ const FinanceiroPage = () => {
                   {/* Despesas do dia */}
                   <div className="space-y-2 pl-4">
           {expensesOnDate.map((expense, index) => {
-            const CategoryIcon = categories[expense.category].icon;
-            const categoryColor = categories[expense.category].color;
+            // Despesa antiga pode não ter categoria, ou ter uma que não existe
+            // mais: ler direto do mapa quebrava a aba inteira (tela branca).
+            const category = categories[expense.category] || categories.outros;
+            const CategoryIcon = category.icon;
+            const categoryColor = category.color;
             let expenseDate;
             if (expense.date?.toDate) {
               expenseDate = expense.date.toDate();
@@ -694,7 +713,7 @@ const FinanceiroPage = () => {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className={`badge ${categoryColor} bg-opacity-20 text-xs`}>
-                            {categories[expense.category].label}
+                            {category.label}
                           </span>
                           {isPago && (
                             <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
