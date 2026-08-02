@@ -180,6 +180,36 @@ Reconexão: o `TripContext` escuta `visibilitychange` / `pageshow` / `online` e,
 todos os `onSnapshot`). Qualquer listener novo precisa de `reconnectToken` no array de dependências,
 senão não volta depois que o celular congela a aba.
 
+### 11. API externa nova exige mexer em dois arquivos além do código
+
+Um `fetch` para um host novo funciona no `npm run dev` e falha calado em produção: o dev server não
+manda os headers do `netlify.toml`, então o CSP só aparece depois do deploy. O erro é um
+`Failed to fetch` genérico — parece a API fora do ar.
+
+Ao adicionar (ou trocar) uma API externa, percorra os três:
+
+| Arquivo | O que fazer |
+|---------|-------------|
+| o código | o `fetch` em si |
+| `netlify.toml` | acrescentar o host em `connect-src` do `Content-Security-Policy` |
+| `public/service-worker.js` | acrescentar o host na lista de exceções do handler de `fetch` |
+
+Sem a exceção no service worker, a estratégia network-first guarda a resposta em cache e passa a
+servi-la quando a rede falha — a tela mostra dado velho achando que é do momento. Vale para
+qualquer coisa com validade curta, como cotação.
+
+Como conferir de verdade: só em produção (ou num `npm run deploy:preview`, que usa os mesmos
+headers). No console do navegador, na origem publicada:
+
+```js
+fetch('https://HOST/endpoint').then(r => r.status).catch(e => 'BLOQUEADO: ' + e.message)
+```
+
+Escolha de API: a `api.exchangerate.host` usada até 08/2026 virou paga e passou a responder
+**200 com `success: false` e `missing_access_key`** — quem lia `data.rates?.BRL` só via `undefined`.
+A atual é `open.er-api.com` (gratuita, sem chave, CORS liberado); ela também responde 200 em erro,
+então quem decide se deu certo é o campo `result === 'success'`, nunca o status HTTP.
+
 ---
 
 ## Modelo de dados (Firestore)
