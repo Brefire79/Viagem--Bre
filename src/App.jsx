@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TripProvider } from './contexts/TripContext';
 import Layout from './components/Layout';
+import TripGate from './components/TripGate';
 import UpdateNotification from './components/UpdateNotification';
 
 const AuthPage = lazy(() => import('./pages/AuthPage'));
@@ -41,13 +42,16 @@ const PublicRoute = ({ children }) => {
   return children;
 };
 
+// O TripProvider fica acima das rotas (ver App), não aqui: o <Routes> usa
+// key={pathname}, então tudo que estiver dentro dele é desmontado e remontado a
+// cada troca de aba - o que zerava a viagem e reassinava o Firestore sem parar.
 const ProtectedShell = () => (
   <ProtectedRoute>
-    <TripProvider>
-      <Layout>
+    <Layout>
+      <TripGate>
         <Outlet />
-      </Layout>
-    </TripProvider>
+      </TripGate>
+    </Layout>
   </ProtectedRoute>
 );
 
@@ -95,8 +99,10 @@ function App() {
       }}
     >
       <AuthProvider>
-        <AppRoutes />
-        <UpdateNotification />
+        <TripProvider>
+          <AppRoutes />
+          <UpdateNotification />
+        </TripProvider>
       </AuthProvider>
     </BrowserRouter>
   );

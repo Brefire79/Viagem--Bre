@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { 
-  collection, 
-  doc, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  addDoc,
+  updateDoc,
   deleteDoc,
   getDoc,
   getDocs,
@@ -13,7 +13,9 @@ import {
   where,
   serverTimestamp,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  disableNetwork,
+  enableNetwork
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthContext';
@@ -31,6 +33,31 @@ export const useTrip = () => {
 };
 
 // Provider da viagem
+// Chave usada para lembrar a viagem escolhida entre reinicializações do app.
+// No celular o sistema descarta a webview em segundo plano: sem isso, ao voltar
+// o app cai na primeira viagem ativa em vez da que o usuário estava vendo.
+const SELECTED_TRIP_STORAGE_KEY = 'viagem-colaborativa:selectedTripId';
+
+const readStoredTripId = () => {
+  try {
+    return window.localStorage.getItem(SELECTED_TRIP_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const storeTripId = (tripId) => {
+  try {
+    if (tripId) {
+      window.localStorage.setItem(SELECTED_TRIP_STORAGE_KEY, tripId);
+    } else {
+      window.localStorage.removeItem(SELECTED_TRIP_STORAGE_KEY);
+    }
+  } catch {
+    // localStorage indisponível (modo privado): a seleção só não sobrevive ao restart
+  }
+};
+
 export const TripProvider = ({ children }) => {
   const { user } = useAuth();
   const [currentTrip, setCurrentTrip] = useState(null);
@@ -40,11 +67,73 @@ export const TripProvider = ({ children }) => {
   const [participants, setParticipants] = useState([]);
   const [participantsData, setParticipantsData] = useState({});
   const [loading, setLoading] = useState(true);
+  // Guarda a falha do listener para que a tela mostre "erro + tentar de novo"
+  // em vez de "Nenhuma viagem encontrada", que faz o usuário achar que perdeu tudo.
+  const [error, setError] = useState(null);
+  // Incrementado para forçar a reassinatura de todos os listeners do Firestore.
+  const [reconnectToken, setReconnectToken] = useState(0);
 
   // Guarda a viagem escolhida pelo usuário. Sem isso, qualquer atualização
   // vinda do Firestore voltava para a primeira viagem ativa e descartava a
   // seleção - com mais de uma viagem salva, o app parecia mostrar dados velhos.
-  const selectedTripIdRef = useRef(null);
+  const selectedTripIdRef = useRef(readStoredTripId());
+
+  // Reabre as conexões do Firestore e reassina os listeners.
+  //
+  // Ao abrir um PDF, o app vai para segundo plano e o sistema congela (ou
+  // descarta) a webview. Os streams do Firestore morrem e os onSnapshot param de
+  // entregar: a viagem some da tela e só volta quando o app é fechado e reaberto.
+  // Derrubar e subir a rede força o SDK a reconstruir os streams.
+  const reconnect = useCallback(async () => {
+    setError(null);
+    setReconnectToken((token) => token + 1);
+
+    if (!db) return;
+
+    try {
+      await disableNetwork(db);
+      await enableNetwork(db);
+    } catch (networkError) {
+      console.error('Erro ao reconectar ao Firestore:', networkError.message);
+    }
+  }, []);
+
+  // Detecta a volta do segundo plano e reconecta.
+  useEffect(() => {
+    if (!user) return;
+
+    // Só reconecta depois de um tempo real em segundo plano. Alternar de aba por
+    // um instante não derruba nada e não vale o ciclo de rede.
+    const MIN_HIDDEN_MS = 2000;
+    let hiddenSince = document.visibilityState === 'hidden' ? Date.now() : null;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenSince = Date.now();
+        return;
+      }
+
+      if (hiddenSince !== null && Date.now() - hiddenSince >= MIN_HIDDEN_MS) {
+        reconnect();
+      }
+      hiddenSince = null;
+    };
+
+    // bfcache: a página volta viva, mas com as conexões de rede já cortadas
+    const handlePageShow = (event) => {
+      if (event.persisted) reconnect();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('online', reconnect);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('online', reconnect);
+    };
+  }, [user, reconnect]);
 
   // Monitora a viagem atual do usuário (apenas viagens ativas)
   useEffect(() => {
@@ -60,7 +149,7 @@ export const TripProvider = ({ children }) => {
 
     const tripsRef = collection(db, 'trips');
     const q = query(
-      tripsRef, 
+      tripsRef,
       where('participants', 'array-contains', user.uid)
     );
 
@@ -82,21 +171,25 @@ export const TripProvider = ({ children }) => {
 
       if (activeTrip) {
         selectedTripIdRef.current = activeTrip.id;
+        storeTripId(activeTrip.id);
         setCurrentTrip(activeTrip);
         setParticipants(activeTrip.participants || []);
       } else {
         selectedTripIdRef.current = null;
+        storeTripId(null);
         setCurrentTrip(null);
         setParticipants([]);
       }
+      setError(null);
       setLoading(false);
-    }, (error) => {
-      console.error('Erro ao carregar viagem:', error.message);
+    }, (snapshotError) => {
+      console.error('Erro ao carregar viagem:', snapshotError.message);
+      setError(snapshotError.message || 'Não foi possível carregar a viagem');
       setLoading(false);
     });
 
     return unsubscribe;
-  }, [user]);
+  }, [user, reconnectToken]);
 
   // Monitora eventos da viagem
   useEffect(() => {
@@ -120,7 +213,7 @@ export const TripProvider = ({ children }) => {
     });
 
     return unsubscribe;
-  }, [currentTrip?.id]);
+  }, [currentTrip?.id, reconnectToken]);
 
   // Monitora despesas da viagem
   useEffect(() => {
@@ -144,7 +237,7 @@ export const TripProvider = ({ children }) => {
     });
 
     return unsubscribe;
-  }, [currentTrip?.id]);
+  }, [currentTrip?.id, reconnectToken]);
 
   // Busca dados dos participantes
   useEffect(() => {
@@ -206,6 +299,7 @@ export const TripProvider = ({ children }) => {
     }
 
     selectedTripIdRef.current = trip.id;
+    storeTripId(trip.id);
     setCurrentTrip(trip);
     setParticipants(trip.participants || []);
 
@@ -541,6 +635,8 @@ export const TripProvider = ({ children }) => {
       
       // Resetar currentTrip se era a viagem atual
       if (currentTrip?.id === tripId) {
+        selectedTripIdRef.current = null;
+        storeTripId(null);
         setCurrentTrip(null);
       }
 
@@ -561,6 +657,8 @@ export const TripProvider = ({ children }) => {
     participants,
     participantsData,
     loading,
+    error, // Falha ao carregar a viagem (listener do Firestore caiu)
+    reconnect, // Refaz as conexões do Firestore e reassina os listeners
     createTrip,
     updateTrip,
     deleteTrip,

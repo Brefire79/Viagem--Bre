@@ -160,6 +160,26 @@ app parece "não ter atualizado".
 Ao mexer em qualquer aba, considere: viagem sem eventos, viagem sem despesas, viagem arquivada e
 viagem com dados antigos.
 
+### 10. `currentTrip` nulo não significa "não tem viagem"
+
+`currentTrip === null` cobre três situações diferentes: ainda carregando, o listener do Firestore
+caiu, e o usuário realmente não tem viagem. As páginas tratavam as três como a última e mostravam
+"Nenhuma viagem encontrada" — no celular, voltar de um PDF congelava a webview, matava o stream e
+o app anunciava que a viagem tinha sumido (só voltava fechando e reabrindo o app).
+
+Quem separa os três estados é `src/components/TripGate.jsx`, entre o `Layout` e o `<Outlet />`.
+As páginas só recebem o controle quando o caso é o genuíno. **Não mova a checagem de `loading` /
+`error` para dentro das páginas** e não solte tela nova fora do `TripGate`.
+
+O `TripProvider` fica **acima** do `<Routes>` em `App.jsx`. O `<Routes>` usa `key={pathname}`, então
+tudo dentro dele remonta a cada troca de aba — com o provider lá dentro, a viagem zerava e os
+listeners eram reassinados sem parar.
+
+Reconexão: o `TripContext` escuta `visibilitychange` / `pageshow` / `online` e, ao voltar de mais de
+2s em segundo plano, chama `reconnect()` (ciclo `disableNetwork` → `enableNetwork` + reassinatura de
+todos os `onSnapshot`). Qualquer listener novo precisa de `reconnectToken` no array de dependências,
+senão não volta depois que o celular congela a aba.
+
 ---
 
 ## Modelo de dados (Firestore)
