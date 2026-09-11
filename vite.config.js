@@ -14,8 +14,8 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['icon-192.svg', 'icon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'Viagem Colaborativa',
-        short_name: 'Viagem',
+        name: 'Viagem Breno & Claudia',
+        short_name: 'Bre & Clau',
         description: 'Planeje sua viagem de forma colaborativa com controle financeiro completo',
         theme_color: '#1E4763',
         background_color: '#F7F1E4',

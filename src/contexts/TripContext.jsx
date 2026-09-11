@@ -524,6 +524,25 @@ export const TripProvider = ({ children }) => {
     }
   };
 
+  // ========== CAIXAS (reservas de dinheiro da viagem) ==========
+  // As caixas moram no documento da viagem: `trips/{id}.caixas` é um array de
+  // { id, name, amount }. Substitui o array inteiro - quem chama já monta a
+  // lista final (criar, renomear, apagar), o que evita dois updates parciais
+  // se disputarem no Firestore.
+  const saveCaixas = async (caixas) => {
+    if (!currentTrip || !db) return { success: false, error: 'Nenhuma viagem selecionada' };
+
+    const limpas = (Array.isArray(caixas) ? caixas : [])
+      .map(caixa => ({
+        id: String(caixa.id),
+        name: String(caixa.name || '').trim(),
+        amount: Number(caixa.amount) || 0
+      }))
+      .filter(caixa => caixa.id && caixa.name);
+
+    return updateTrip(currentTrip.id, { caixas: limpas });
+  };
+
   // ========== OPERAÇÕES COM DESPESAS ==========
 
   const addExpense = async (expenseData) => {
@@ -669,7 +688,8 @@ export const TripProvider = ({ children }) => {
     deleteEvent,
     addExpense,
     updateExpense,
-    deleteExpense
+    deleteExpense,
+    saveCaixas // Substitui a lista de caixas (reservas) da viagem atual
   };
 
   return (

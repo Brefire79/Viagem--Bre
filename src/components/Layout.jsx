@@ -42,7 +42,7 @@ const Layout = ({ children }) => {
                 <span className="text-white font-bold text-lg">V</span>
               </div>
               <div className="hidden sm:block">
-                <h1 className="text-xl font-bold text-dark">Viagem Colaborativa</h1>
+                <h1 className="text-xl font-bold text-dark">Viagem Breno & Claudia</h1>
                 <p className="text-xs text-sand-500">{user?.displayName || user?.email}</p>
               </div>
             </div>

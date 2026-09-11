@@ -194,6 +194,70 @@ export class PDFExporter {
         return false;
       };
 
+      // ===== Reservas por caixa =====
+      // Mesmo comparativo da tela: reservado x gasto (pago + pendente) por caixa.
+      const caixas = Array.isArray(data.caixas) ? data.caixas : [];
+      if (caixas.length) {
+        const rowH = 6.2;
+        ensureSpace(8 + rowH * (caixas.length + 2));
+
+        fieldLabel(pdf, 'reservas por caixa', margin, y, { size: 7, color: COLOR.ocean, spacing: 1 });
+        y += 5;
+
+        const colGasto = pageW - margin - 62;
+        const colReservado = pageW - margin - 31;
+        const colSaldo = pageW - margin;
+        fieldLabel(pdf, 'caixa', margin, y, { size: 5.8, spacing: 0.6 });
+        fieldLabel(pdf, 'gasto', colGasto, y, { size: 5.8, spacing: 0.6, align: 'right' });
+        fieldLabel(pdf, 'reservado', colReservado, y, { size: 5.8, spacing: 0.6, align: 'right' });
+        fieldLabel(pdf, 'saldo', colSaldo, y, { size: 5.8, spacing: 0.6, align: 'right' });
+        y += 2;
+        perforation(pdf, margin, y, pageW - margin, { dash: [0.6, 1.4] });
+        y += rowH - 1.5;
+
+        let totalReservado = 0;
+        let totalGasto = 0;
+        caixas.forEach((caixa) => {
+          const reservado = Number(caixa.reserved) || 0;
+          const gasto = Number(caixa.spent) || 0;
+          const saldo = reservado - gasto;
+          totalReservado += reservado;
+          totalGasto += gasto;
+
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(9.5);
+          setInk(pdf, COLOR.ink);
+          const nome = pdf.splitTextToSize(toPdfSafeText(caixa.name) || 'Caixa', contentWidth - 100)[0];
+          pdf.text(nome, margin, y);
+
+          dataText(pdf, money(gasto), colGasto, y, { size: 9, color: COLOR.muted, align: 'right' });
+          dataText(pdf, money(reservado), colReservado, y, { size: 9, color: COLOR.ink, align: 'right' });
+          dataText(pdf, (saldo < 0 ? '-' : '') + money(Math.abs(saldo)), colSaldo, y, {
+            size: 9, color: saldo < -0.005 ? COLOR.terracotta : COLOR.ocean, align: 'right'
+          });
+          y += rowH;
+        });
+
+        perforation(pdf, margin, y - rowH + 2, pageW - margin, { dash: [0.6, 1.4] });
+        const saldoTotal = totalReservado - totalGasto;
+        fieldLabel(pdf, 'total das caixas', margin, y, { size: 6.2, spacing: 0.6 });
+        dataText(pdf, money(totalGasto), colGasto, y, { size: 9, color: COLOR.muted, align: 'right' });
+        dataText(pdf, money(totalReservado), colReservado, y, { size: 9, align: 'right' });
+        dataText(pdf, (saldoTotal < 0 ? '-' : '') + money(Math.abs(saldoTotal)), colSaldo, y, {
+          size: 9, color: saldoTotal < -0.005 ? COLOR.terracotta : COLOR.ocean, align: 'right'
+        });
+        y += rowH;
+
+        if (Number(data.semCaixa) > 0) {
+          pdf.setFont('helvetica', 'italic');
+          pdf.setFontSize(8);
+          setInk(pdf, COLOR.muted);
+          pdf.text(`${money(data.semCaixa)} lançados sem caixa.`, margin, y);
+          y += rowH;
+        }
+        y += 3;
+      }
+
       // ===== Despesas =====
       const expenses = Array.isArray(data.expenses) ? data.expenses : [];
 
@@ -246,7 +310,7 @@ export class PDFExporter {
           setFill(pdf, categoryColor);
           pdf.rect(textX, cursorY - 2.4, 2.1, 2.1, 'F');
 
-          const detalhe = [category, expense.paidByName ? `pago por ${toPdfSafeText(expense.paidByName)}` : '']
+          const detalhe = [category, expense.caixaName ? `pago com ${toPdfSafeText(expense.caixaName)}` : '']
             .filter(Boolean)
             .join(' · ');
           fieldLabel(pdf, detalhe, textX + 3.6, cursorY - 0.6, { size: 6.2, spacing: 0.6 });
@@ -285,7 +349,8 @@ export class PDFExporter {
     }
   }
 
-  /**
+
+  /**
    * Exporta o roteiro completo da viagem como PDF, na linguagem visual de um
    * bilhete de embarque: canhoto destacável por dia, picotes, rótulos de campo
    * em caixa alta e horários em fonte monoespaçada.

@@ -4,7 +4,8 @@ import { useTrip } from '../contexts/TripContext';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   Plus, Plane, Car, Hotel, MapPin, UtensilsCrossed, MoreHorizontal,
-  DollarSign, TrendingUp, Users, X, Edit2, Trash2, Receipt, Download
+  DollarSign, TrendingUp, Users, X, Edit2, Trash2, Receipt, Download,
+  Wallet, PiggyBank, HeartHandshake
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -12,7 +13,7 @@ import { pageVariants, cardVariants, buttonVariants, modalOverlayVariants, modal
 
 const FinanceiroPage = () => {
   const { user } = useAuth();
-  const { expenses, addExpense, updateExpense, deleteExpense, currentTrip, participants, participantsData } = useTrip();
+  const { expenses, addExpense, updateExpense, deleteExpense, saveCaixas, currentTrip, participants, participantsData } = useTrip();
   const [showModal, setShowModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [formData, setFormData] = useState({
@@ -22,8 +23,19 @@ const FinanceiroPage = () => {
     paidBy: user?.uid || '',
     date: new Date().toISOString().split('T')[0],
     status: 'pago', // 'pago' ou 'pendente'
-    splitBetween: []
+    splitBetween: [],
+    caixaId: '' // Caixa (reserva) de onde o dinheiro sai; '' = sem caixa
   });
+
+  // Caixas: dinheiro separado antes da viagem ("Breno", "Claudia", "Comida"...).
+  // Viagem antiga não tem o campo, então sempre cai para lista vazia.
+  const caixas = useMemo(
+    () => (Array.isArray(currentTrip?.caixas) ? currentTrip.caixas : []),
+    [currentTrip?.caixas]
+  );
+  const [showCaixaModal, setShowCaixaModal] = useState(false);
+  const [editingCaixa, setEditingCaixa] = useState(null);
+  const [caixaForm, setCaixaForm] = useState({ name: '', amount: '' });
 
   // Categorias de despesas
   const categories = {
@@ -54,11 +66,19 @@ const FinanceiroPage = () => {
       },
       expenses: sortedExpenses.map(expense => ({
         ...expense,
-        paidByName: getParticipantName(expense.paidBy)
+        paidByName: getParticipantName(expense.paidBy),
+        caixaName: caixas.find(caixa => caixa.id === expense.caixaId)?.name || 'Viagem'
       })),
       // O relatório mostra os mesmos números do topo da tela: o total é tudo que
       // foi lançado, com pago e pendente discriminados. Antes o "gasto médio"
       // dividia só o total pago pela contagem de TODAS as despesas.
+      // Reservas por caixa, com o mesmo gasto que a tela mostra
+      caixas: caixas.map(caixa => ({
+        name: caixa.name,
+        reserved: Number(caixa.amount) || 0,
+        spent: calculations.byCaixa[caixa.id] || 0
+      })),
+      semCaixa: calculations.semCaixa,
       summary: {
         total: calculations.totalGeral,
         totalPaid: calculations.total,
@@ -178,6 +198,22 @@ const FinanceiroPage = () => {
       return acc;
     }, {});
 
+    // Gasto por caixa. Conta pago E pendente: um compromisso já assumido
+    // (hotel a pagar) já saiu da reserva na prática. Despesa cuja caixa foi
+    // apagada, ou que nunca teve caixa, cai em `semCaixa`.
+    const byCaixa = {};
+    let semCaixa = 0;
+    const caixaIds = new Set(caixas.map(caixa => caixa.id));
+    expenses.forEach(exp => {
+      const valor = Number(exp.amount) || 0;
+      if (exp.caixaId && caixaIds.has(exp.caixaId)) {
+        byCaixa[exp.caixaId] = (byCaixa[exp.caixaId] || 0) + valor;
+      } else {
+        semCaixa += valor;
+      }
+    });
+    const totalReservado = caixas.reduce((sum, caixa) => sum + (Number(caixa.amount) || 0), 0);
+
     // Balanço final (quem deve/recebe)
     const balance = {};
     const allParticipants = [...new Set([...Object.keys(paidByPerson), ...Object.keys(shouldPayPerPerson)])];
@@ -203,11 +239,14 @@ const FinanceiroPage = () => {
       paidCount: paidExpenses.length,
       pendingCount: pendingExpenses.length,
       byCategory,
+      byCaixa,
+      semCaixa,
+      totalReservado,
       paidByPerson,
       shouldPayPerPerson,
       balance
     };
-  }, [expenses]);
+  }, [expenses, caixas]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -225,11 +264,6 @@ const FinanceiroPage = () => {
 
     if (!formData.paidBy) {
       alert('Por favor, selecione quem pagou');
-      return;
-    }
-
-    if (participants && participants.length > 1 && (!formData.splitBetween || formData.splitBetween.length === 0)) {
-      alert('Selecione entre quem dividir a despesa (ou marque Todos)');
       return;
     }
 
@@ -261,6 +295,7 @@ const FinanceiroPage = () => {
       amount: Number(formData.amount),
       date: utcDate,
       status: formData.status || 'pago',
+      caixaId: formData.caixaId || null,
       // Despesa dividida entre os participantes marcados (ou só o pagador como fallback)
       splitBetween: (formData.splitBetween && formData.splitBetween.length > 0)
         ? formData.splitBetween
@@ -308,14 +343,15 @@ const FinanceiroPage = () => {
         status: expense.status || 'pago',
         splitBetween: Array.isArray(expense.splitBetween) && expense.splitBetween.length > 0
           ? expense.splitBetween
-          : (participants || [])
+          : (participants || []),
+        caixaId: expense.caixaId || ''
       });
     } else {
       setEditingExpense(null);
       // Definir paidBy como primeiro participante ou usuário atual
-      const defaultPaidBy = participants && participants.length > 0 
-        ? participants[0] 
-        : (user?.uid || '');
+      const defaultPaidBy = (user?.uid && participants?.includes(user.uid))
+        ? user.uid
+        : (participants?.[0] || user?.uid || '');
       
       setFormData({
         category: 'aereo',
@@ -327,7 +363,8 @@ const FinanceiroPage = () => {
         // Por padrao, divide entre todos os participantes
         splitBetween: participants && participants.length > 0
           ? [...participants]
-          : (user?.uid ? [user.uid] : [])
+          : (user?.uid ? [user.uid] : []),
+        caixaId: caixaParaCategoria('aereo')
       });
     }
     setShowModal(true);
@@ -336,6 +373,78 @@ const FinanceiroPage = () => {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingExpense(null);
+  };
+
+  // Caixa cujo nome coincide com o rótulo da categoria (ex.: caixa "Alimentação"
+  // para a categoria alimentacao). Serve só de sugestão ao escolher a
+  // categoria; o usuário troca à vontade.
+  const caixaParaCategoria = (categoryKey) => {
+    const label = categories[categoryKey]?.label;
+    if (!label) return '';
+    const normaliza = (texto) => String(texto || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().trim();
+    const alvo = normaliza(label);
+    const achada = caixas.find(caixa => normaliza(caixa.name) === alvo);
+    return achada ? achada.id : '';
+  };
+
+  const handleSelectCategory = (key) => {
+    const sugerida = caixaParaCategoria(key);
+    setFormData({ ...formData, category: key, caixaId: sugerida || formData.caixaId });
+  };
+
+  // ===== Caixas (criar / renomear / apagar) =====
+  const handleOpenCaixaModal = (caixa = null) => {
+    setEditingCaixa(caixa);
+    setCaixaForm(caixa
+      ? { name: caixa.name, amount: String(caixa.amount ?? '') }
+      : { name: '', amount: '' });
+    document.body.style.overflow = 'hidden';
+    setShowCaixaModal(true);
+  };
+
+  const handleCloseCaixaModal = () => {
+    document.body.style.overflow = '';
+    setShowCaixaModal(false);
+    setEditingCaixa(null);
+  };
+
+  const handleSubmitCaixa = async (e) => {
+    e.preventDefault();
+    const name = caixaForm.name.trim();
+    const amount = Number(caixaForm.amount);
+    if (!name) {
+      alert('Dê um nome para a caixa (ex.: Breno, Claudia, Comida)');
+      return;
+    }
+    if (isNaN(amount) || amount < 0) {
+      alert('Digite um valor válido para a reserva');
+      return;
+    }
+
+    const novaLista = editingCaixa
+      ? caixas.map(caixa => caixa.id === editingCaixa.id ? { ...caixa, name, amount } : caixa)
+      : [...caixas, { id: `caixa_${Date.now().toString(36)}`, name, amount }];
+
+    const result = await saveCaixas(novaLista);
+    if (result.success) {
+      handleCloseCaixaModal();
+    } else {
+      alert('Erro ao salvar caixa: ' + (result.error || 'Erro desconhecido'));
+    }
+  };
+
+  const handleDeleteCaixa = async (caixa) => {
+    const gasto = calculations.byCaixa[caixa.id] || 0;
+    const aviso = gasto > 0
+      ? `Apagar a caixa "${caixa.name}"? As despesas lançadas nela continuam na viagem, só ficam sem caixa.`
+      : `Apagar a caixa "${caixa.name}"?`;
+    if (!window.confirm(aviso)) return;
+    const result = await saveCaixas(caixas.filter(item => item.id !== caixa.id));
+    if (!result.success) {
+      alert('Erro ao apagar caixa: ' + (result.error || 'Erro desconhecido'));
+    }
   };
 
   const handleDeleteExpense = async (expenseId) => {
@@ -363,11 +472,6 @@ const FinanceiroPage = () => {
     );
   }
 
-  // Cálculo da situação do usuário atual
-  const userBalance = calculations.balance[user?.uid] || 0;
-  const userIsPositive = userBalance > 0;
-  const userIsZero = Math.abs(userBalance) < 0.01;
-
   return (
     <motion.div 
       className="max-w-6xl mx-auto"
@@ -394,7 +498,7 @@ const FinanceiroPage = () => {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.1 }}
             >
-              Veja quanto gastou, quanto deve e quanto tem a receber
+              Quanto reservamos, quanto já foi e quanto ainda sobra
             </motion.p>
           </div>
           
@@ -490,74 +594,158 @@ const FinanceiroPage = () => {
         </div>
       </motion.div>
 
-      {/* 2️⃣ BLOCO "SUA SITUAÇÃO" */}
-      <motion.div 
-        className={`card mb-6 border-4 ${
-          userIsZero 
-            ? 'border-green-300 bg-green-50' 
-            : userIsPositive 
-            ? 'border-green-400 bg-green-50' 
-            : 'border-orange-400 bg-orange-50'
-        }`}
-        initial={{ opacity: 0, x: -50 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: 0.5, type: 'spring' }}
-      >
-        <div className="text-center py-4 md:py-6">
+      {/* 2️⃣ NOSSO CAIXA - a viagem é do casal, o dinheiro é um só.
+          O saldo "quem deve a quem" continua calculado (História e PDF usam),
+          mas aqui o que interessa é reservado x lançado. */}
+      {(() => {
+        const sobra = calculations.totalReservado - calculations.totalGeral;
+        const temReserva = calculations.totalReservado > 0;
+        const estourou = temReserva && sobra < 0;
+        return (
           <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.7, type: 'spring', stiffness: 300 }}
+            className={`card mb-6 border-4 ${estourou ? 'border-orange-400 bg-orange-50' : 'border-green-400 bg-green-50'}`}
+            initial={{ opacity: 0, x: -50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.5, type: 'spring' }}
           >
-            {userIsZero ? (
-              <>
-                <div className="text-5xl md:text-6xl mb-3 md:mb-4">✅</div>
-                <h2 className="text-xl md:text-2xl lg:text-3xl font-black text-green-700 mb-2">
-                  Tudo certo!
-                </h2>
-                <p className="text-sm md:text-base lg:text-lg text-green-600 px-4">
-                  Você está quitado. Ninguém deve nada para você e você não deve nada.
+            <div className="text-center py-4 md:py-6">
+              <HeartHandshake className={`w-12 h-12 mx-auto mb-3 ${estourou ? 'text-orange-600' : 'text-green-600'}`} />
+              <h2 className={`text-xl md:text-2xl lg:text-3xl font-black mb-1 ${estourou ? 'text-orange-700' : 'text-green-700'}`}>
+                Nosso caixa da viagem
+              </h2>
+              <p className={`text-sm md:text-base mb-5 px-4 ${estourou ? 'text-orange-600' : 'text-green-600'}`}>
+                Tudo que foi lançado é nosso, em conjunto
+              </p>
+              <div className="grid grid-cols-3 gap-2 md:gap-4 px-2">
+                <div>
+                  <p className={`text-xs mb-1 ${estourou ? 'text-orange-600' : 'text-green-600'}`}>Reservado</p>
+                  <p className="text-lg md:text-2xl font-black text-dark truncate">
+                    {temReserva ? formatCurrency(calculations.totalReservado) : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs mb-1 ${estourou ? 'text-orange-600' : 'text-green-600'}`}>Lançado</p>
+                  <p className="text-lg md:text-2xl font-black text-dark truncate">
+                    {formatCurrency(calculations.totalGeral)}
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs mb-1 ${estourou ? 'text-orange-600' : 'text-green-600'}`}>
+                    {estourou ? 'Passou' : 'Ainda sobra'}
+                  </p>
+                  <p className={`text-lg md:text-2xl font-black truncate ${estourou ? 'text-orange-600' : 'text-green-600'}`}>
+                    {temReserva ? formatCurrency(Math.abs(sobra)) : '—'}
+                  </p>
+                </div>
+              </div>
+              {!temReserva && (
+                <p className="text-xs text-sand-500 mt-4 px-4">
+                  Crie caixas abaixo com o dinheiro separado para a viagem e acompanhe o que sobra.
                 </p>
-              </>
-            ) : userIsPositive ? (
-              <>
-                <div className="text-5xl md:text-6xl mb-3 md:mb-4">💚</div>
-                <h2 className="text-xl md:text-2xl lg:text-3xl font-black text-green-700 mb-2">
-                  Você tem a receber
-                </h2>
-                <motion.p 
-                  className="text-3xl md:text-4xl lg:text-5xl font-black text-green-600"
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.9, type: 'spring' }}
-                >
-                  {formatCurrency(userBalance)}
-                </motion.p>
-                <p className="text-xs md:text-sm text-green-600 mt-2 px-4">
-                  Você pagou mais do que sua parte
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="text-5xl md:text-6xl mb-3 md:mb-4">💸</div>
-                <h2 className="text-xl md:text-2xl lg:text-3xl font-black text-orange-700 mb-2">
-                  Você deve
-                </h2>
-                <motion.p 
-                  className="text-3xl md:text-4xl lg:text-5xl font-black text-orange-600"
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.9, type: 'spring' }}
-                >
-                  {formatCurrency(Math.abs(userBalance))}
-                </motion.p>
-                <p className="text-xs md:text-sm text-orange-600 mt-2 px-4">
-                  Outros pagaram por você
-                </p>
-              </>
-            )}
+              )}
+            </div>
           </motion.div>
+        );
+      })()}
+
+      {/* 3️⃣ RESERVAS POR CAIXA */}
+      <motion.div
+        className="mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xl font-bold text-dark flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-ocean" />
+            Reservas por caixa
+          </h2>
+          <button
+            type="button"
+            onClick={() => handleOpenCaixaModal()}
+            className="btn-outline text-sm px-4 py-2 flex items-center gap-1"
+          >
+            <Plus className="w-4 h-4" />
+            Nova caixa
+          </button>
         </div>
+
+        {caixas.length === 0 ? (
+          <div className="card text-center py-8">
+            <PiggyBank className="w-12 h-12 text-sand-400 mx-auto mb-3" />
+            <h3 className="text-lg font-bold text-dark mb-1">Nenhuma caixa ainda</h3>
+            <p className="text-sm text-sand-500 px-4">
+              Separe o dinheiro da viagem em caixas (ex.: Breno, Claudia, Comida, Compras).
+              Ao lançar uma despesa você escolhe de qual caixa ela sai.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+            {caixas.map((caixa, index) => {
+              const reservado = Number(caixa.amount) || 0;
+              const gasto = calculations.byCaixa[caixa.id] || 0;
+              const saldo = reservado - gasto;
+              const pct = reservado > 0 ? Math.min((gasto / reservado) * 100, 100) : (gasto > 0 ? 100 : 0);
+              const passou = saldo < -0.005;
+              const quase = !passou && reservado > 0 && pct >= 85;
+              const barra = passou ? 'bg-red-500' : quase ? 'bg-orange-400' : 'bg-green-500';
+              const pill = passou
+                ? 'bg-red-100 text-red-800'
+                : quase ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800';
+
+              return (
+                <motion.div
+                  key={caixa.id}
+                  className={`card p-4 ${passou ? 'border-red-300' : quase ? 'border-orange-300' : ''}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.65 + index * 0.05 }}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <h3 className="font-bold text-dark truncate flex items-center gap-2">
+                      <PiggyBank className="w-4 h-4 text-ocean flex-shrink-0" />
+                      <span className="truncate">{caixa.name}</span>
+                    </h3>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCaixaModal(caixa)}
+                        className="p-1.5 hover:bg-ocean-50 rounded-lg transition-all"
+                        aria-label={`Editar caixa ${caixa.name}`}
+                      >
+                        <Edit2 className="w-4 h-4 text-ocean" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCaixa(caixa)}
+                        className="p-1.5 hover:bg-red-50 rounded-lg transition-all"
+                        aria-label={`Apagar caixa ${caixa.name}`}
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-sand-500">Reservado {formatCurrency(reservado)}</p>
+                  <div className="w-full h-2 bg-sand-200 rounded-full overflow-hidden my-2">
+                    <div className={`h-full ${barra} transition-all duration-500`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-dark">Gasto {formatCurrency(gasto)}</span>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${pill}`}>
+                      {passou ? `passou ${formatCurrency(Math.abs(saldo))}` : `sobra ${formatCurrency(saldo)}`}
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+
+        {caixas.length > 0 && calculations.semCaixa > 0 && (
+          <p className="text-xs text-sand-500 mt-3 px-1">
+            {formatCurrency(calculations.semCaixa)} pagos com dinheiro da Viagem (fora das caixas) — edite a despesa se saiu de uma caixa.
+          </p>
+        )}
       </motion.div>
 
       {/* Botão adicionar despesa */}
@@ -679,6 +867,7 @@ const FinanceiroPage = () => {
             // Considera despesas sem status como pagas (compatibilidade)
             const isPendente = expense.status === 'pendente';
             const isPago = expense.status === 'pago';
+            const caixaDaDespesa = expense.caixaId ? caixas.find(caixa => caixa.id === expense.caixaId) : null;
 
             return (
               <motion.div 
@@ -749,7 +938,12 @@ const FinanceiroPage = () => {
 
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-sand-500">
-                        <span>Pago por: {getParticipantName(expense.paidBy)}</span>
+                        <span className="flex items-center gap-1">
+                          {caixaDaDespesa
+                            ? <PiggyBank className="w-4 h-4 text-ocean" />
+                            : <Plane className="w-4 h-4 text-aqua" />}
+                          Pago com: <strong className="text-dark">{caixaDaDespesa ? caixaDaDespesa.name : 'Viagem'}</strong>
+                        </span>
                       </div>
                       <p className="text-xl font-bold text-ocean">
                         {formatCurrency(expense.amount)}
@@ -809,7 +1003,7 @@ const FinanceiroPage = () => {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setFormData({ ...formData, category: key })}
+                      onClick={() => handleSelectCategory(key)}
                       className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all ${
                         formData.category === key
                           ? `${color} border-transparent text-white`
@@ -821,6 +1015,47 @@ const FinanceiroPage = () => {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Pago com: dinheiro comum da viagem ou uma das caixas. "Viagem"
+                  é a ausência de caixa (caixaId vazio) - o valor entra no total
+                  mas não desconta de nenhuma reserva. */}
+              <div>
+                <label className="block text-sm font-medium text-dark-100 mb-2">
+                  Pago com *
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, caixaId: '' })}
+                    className={`px-3 py-2 rounded-full text-sm font-medium border-2 transition-all flex items-center gap-1 ${
+                      !formData.caixaId
+                        ? 'bg-aqua border-aqua text-white'
+                        : 'border-aqua-200 text-aqua-700 hover:border-aqua'
+                    }`}
+                  >
+                    <Plane className="w-4 h-4" />
+                    Viagem
+                  </button>
+                  {caixas.map(caixa => (
+                    <button
+                      key={caixa.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, caixaId: caixa.id })}
+                      className={`px-3 py-2 rounded-full text-sm font-medium border-2 transition-all flex items-center gap-1 ${
+                        formData.caixaId === caixa.id
+                          ? 'bg-ocean border-ocean text-white'
+                          : 'border-ocean-200 text-ocean-700 hover:border-ocean'
+                      }`}
+                    >
+                      <PiggyBank className="w-4 h-4" />
+                      {caixa.name}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-sand-500 mt-1">
+                  "Viagem" é o dinheiro comum; as caixas descontam da reserva de cada uma.
+                </p>
               </div>
 
               {/* Descrição */}
@@ -869,73 +1104,9 @@ const FinanceiroPage = () => {
                 </div>
               </div>
 
-              {/* Quem pagou */}
-              <div>
-                <label className="block text-sm font-medium text-dark-100 mb-2">
-                  Quem pagou? *
-                </label>
-                {participants && participants.length > 0 ? (
-                  <select
-                    value={formData.paidBy}
-                    onChange={(e) => setFormData({ ...formData, paidBy: e.target.value })}
-                    className="input"
-                    required
-                  >
-                    <option value="">-- Selecione um participante --</option>
-                    {participants.map(participantId => (
-                      <option key={participantId} value={participantId}>
-                        {getParticipantName(participantId)}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="input bg-sand-200 text-sand-500 cursor-not-allowed">
-                    Nenhum participante na viagem
-                  </div>
-                )}
-              </div>
-
-              {/* Dividir entre (aparece quando ha 2+ participantes) */}
-              {participants && participants.length > 1 && (
-                <div>
-                  <label className="block text-sm font-medium text-dark-100 mb-2">
-                    Dividir entre? *
-                  </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 p-3 rounded-xl border-2 border-ocean bg-ocean-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.splitBetween?.length === participants.length}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          splitBetween: e.target.checked ? [...participants] : []
-                        })}
-                        className="w-5 h-5 accent-ocean"
-                      />
-                      <span className="font-semibold text-ocean">Todos</span>
-                    </label>
-                    {participants.map(participantId => (
-                      <label
-                        key={participantId}
-                        className="flex items-center gap-3 p-3 rounded-xl border-2 border-sand-200 cursor-pointer hover:border-sand-300"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={formData.splitBetween?.includes(participantId) || false}
-                          onChange={(e) => setFormData({
-                            ...formData,
-                            splitBetween: e.target.checked
-                              ? [...(formData.splitBetween || []), participantId]
-                              : (formData.splitBetween || []).filter(id => id !== participantId)
-                          })}
-                          className="w-5 h-5 accent-ocean"
-                        />
-                        <span className="text-dark">{getParticipantName(participantId)}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* "Quem pagou" e "Dividir entre" não aparecem mais: a viagem é do
+                  casal e o dinheiro é um só. Os campos continuam gravados por
+                  compatibilidade (pagador = quem lançou, dividido entre todos). */}
 
               {/* Status do pagamento */}
               <div>
@@ -979,6 +1150,79 @@ const FinanceiroPage = () => {
                 </button>
                 <button type="submit" className="btn-primary flex-1">
                   {editingExpense ? 'Salvar' : 'Adicionar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal de criar/editar caixa */}
+      {showCaixaModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseCaixaModal();
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-md w-full animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-sand-300">
+              <h2 className="text-2xl font-bold text-dark flex items-center gap-2">
+                <PiggyBank className="w-6 h-6 text-ocean" />
+                {editingCaixa ? 'Editar Caixa' : 'Nova Caixa'}
+              </h2>
+              <button
+                type="button"
+                onClick={handleCloseCaixaModal}
+                className="p-2 hover:bg-sand-200 rounded-lg transition-all"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5 text-dark" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitCaixa} className="p-4 md:p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-dark-100 mb-2">
+                  Nome da caixa *
+                </label>
+                <input
+                  type="text"
+                  value={caixaForm.name}
+                  onChange={(e) => setCaixaForm({ ...caixaForm, name: e.target.value })}
+                  className="input"
+                  placeholder="Ex: Breno, Claudia, Comida, Compras"
+                  maxLength={40}
+                  autoFocus
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-dark-100 mb-2">
+                  Valor reservado (R$) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={caixaForm.amount}
+                  onChange={(e) => setCaixaForm({ ...caixaForm, amount: e.target.value })}
+                  className="input"
+                  placeholder="0.00"
+                  required
+                />
+                <p className="text-xs text-sand-500 mt-1">
+                  Quanto separamos nesta caixa para levar na viagem.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={handleCloseCaixaModal} className="btn-outline flex-1">
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-primary flex-1">
+                  {editingCaixa ? 'Salvar' : 'Criar caixa'}
                 </button>
               </div>
             </form>

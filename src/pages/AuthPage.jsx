@@ -54,7 +54,7 @@ const AuthPage = () => {
           <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-full shadow-lg mb-4">
             <Plane className="w-10 h-10 text-ocean" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2">Viagem Colaborativa</h1>
+          <h1 className="text-4xl font-bold text-white mb-2">Viagem Breno & Claudia</h1>
           <p className="text-ocean-50">Planeje sua viagem em grupo com facilidade</p>
         </div>
 
