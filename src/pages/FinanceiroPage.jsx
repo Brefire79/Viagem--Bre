@@ -55,11 +55,18 @@ const FinanceiroPage = () => {
       outros: { icon: MoreHorizontal, label: 'Outros', color: 'bg-gray-500' }
     };
     customCategories.forEach((item, index) => {
-      base[item.id] = { icon: Tag, label: item.name, color: CUSTOM_COLORS[index % CUSTOM_COLORS.length], custom: true };
+      base[item.id] = {
+        icon: Tag,
+        label: item.name,
+        color: CUSTOM_COLORS[index % CUSTOM_COLORS.length],
+        custom: true,
+        archived: Boolean(item.archived)
+      };
     });
     return base;
   }, [customCategories]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [editingCategories, setEditingCategories] = useState(false); // mostra o × nas extras
   const [categoryForm, setCategoryForm] = useState('');
 
   // Função para exportar PDF
@@ -390,6 +397,7 @@ const FinanceiroPage = () => {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingExpense(null);
+    setEditingCategories(false);
   };
 
   // Caixa cujo nome coincide com o rótulo da categoria (ex.: caixa "Alimentação"
@@ -472,14 +480,20 @@ const FinanceiroPage = () => {
       return;
     }
     const normaliza = (texto) => String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-    const jaExiste = Object.values(categories).some(item => normaliza(item.label) === normaliza(name));
+    const jaExiste = Object.values(categories).some(item => !item.archived && normaliza(item.label) === normaliza(name));
     if (jaExiste) {
       alert('Já existe uma categoria com esse nome');
       return;
     }
 
-    const nova = { id: `cat_${Date.now().toString(36)}`, name };
-    const result = await saveCustomCategories([...customCategories, nova]);
+    // Se existia uma arquivada com esse nome, reativa (mantém o id das despesas antigas)
+    const arquivada = customCategories.find(item => item.archived && normaliza(item.name) === normaliza(name));
+    const nova = arquivada ? { ...arquivada, archived: false } : { id: `cat_${Date.now().toString(36)}`, name };
+    const result = await saveCustomCategories(
+      arquivada
+        ? customCategories.map(item => (item.id === arquivada.id ? nova : item))
+        : [...customCategories, nova]
+    );
     if (result.success) {
       // Já deixa a categoria nova selecionada na despesa que está sendo lançada
       setFormData(prev => ({ ...prev, category: nova.id }));
@@ -494,10 +508,15 @@ const FinanceiroPage = () => {
     if (!item) return;
     const usadas = expenses.filter(exp => exp.category === categoryId).length;
     const aviso = usadas > 0
-      ? `Apagar a categoria "${item.name}"? ${usadas} ${usadas === 1 ? 'despesa passa' : 'despesas passam'} a contar como "Outros".`
+      ? `Apagar a categoria "${item.name}"? As ${usadas} ${usadas === 1 ? 'despesa já lançada continua' : 'despesas já lançadas continuam'} como estão; a categoria só some das opções.`
       : `Apagar a categoria "${item.name}"?`;
     if (!window.confirm(aviso)) return;
-    const result = await saveCustomCategories(customCategories.filter(c => c.id !== categoryId));
+    // Com despesa lançada, arquiva (preserva os dados); sem despesa, remove de vez
+    const result = await saveCustomCategories(
+      usadas > 0
+        ? customCategories.map(c => (c.id === categoryId ? { ...c, archived: true } : c))
+        : customCategories.filter(c => c.id !== categoryId)
+    );
     if (result.success) {
       if (formData.category === categoryId) setFormData(prev => ({ ...prev, category: 'outros' }));
     } else {
@@ -1065,11 +1084,30 @@ const FinanceiroPage = () => {
             <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 overflow-y-auto">
               {/* Categoria */}
               <div>
-                <label className="block text-sm font-medium text-dark-100 mb-2">
-                  Categoria *
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-dark-100">
+                    Categoria *
+                  </label>
+                  {customCategories.some(item => !item.archived) && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingCategories(v => !v)}
+                      className={`text-xs font-medium px-3 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                        editingCategories
+                          ? 'bg-ocean text-white border-ocean'
+                          : 'border-sand-300 text-sand-600 hover:border-ocean hover:text-ocean'
+                      }`}
+                    >
+                      <Edit2 className="w-3 h-3" />
+                      {editingCategories ? 'Concluir' : 'Editar'}
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {Object.entries(categories).map(([key, { icon: Icon, label, color, custom }]) => (
+                  {Object.entries(categories)
+                    // Arquivada só aparece se for a categoria da despesa que está sendo editada
+                    .filter(([key, item]) => !item.archived || formData.category === key)
+                    .map(([key, { icon: Icon, label, color, custom, archived }]) => (
                     <div key={key} className="relative">
                       <button
                         type="button"
@@ -1083,7 +1121,7 @@ const FinanceiroPage = () => {
                         <Icon className="w-5 h-5 flex-shrink-0" />
                         <span className="text-sm font-medium truncate">{label}</span>
                       </button>
-                      {custom && (
+                      {custom && !archived && editingCategories && (
                         <button
                           type="button"
                           onClick={() => handleDeleteCategory(key)}

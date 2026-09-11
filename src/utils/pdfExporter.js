@@ -709,17 +709,33 @@ export class PDFExporter {
 
       days.forEach((day) => {
         // Cabeçalho do dia não pode ficar órfão no rodapé: exige espaço para
-        // ele e para a primeira linha de evento
-        ensureSpace(22);
+        // a faixa (15) e um evento inteiro (título + tipo + resumo)
+        ensureSpace(32);
 
+        // Faixa do dia: carimbo terracota com o número, dia da semana em
+        // destaque e a data ao lado, como o canhoto de um bilhete
         setFill(pdf, COLOR.sandDeep);
-        pdf.rect(margin, y, contentWidth, 9, 'F');
-        fieldLabel(pdf, `dia ${day.dayNumber}`, margin + 3, y + 5.8, { size: 6.5, color: COLOR.terracotta, spacing: 1 });
+        pdf.rect(margin, y, contentWidth, 11, 'F');
+        setFill(pdf, COLOR.terracotta);
+        pdf.rect(margin, y, 16, 11, 'F');
+        fieldLabel(pdf, 'dia', margin + 8, y + 3.6, { size: 4.6, color: COLOR.white, spacing: 0.8, align: 'center' });
+        dataText(pdf, String(day.dayNumber), margin + 8, y + 9.2, { size: 11, color: COLOR.white, align: 'center' });
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(10);
+        pdf.setFontSize(11);
         setInk(pdf, COLOR.ink);
-        pdf.text(toPdfSafeText(`${day.weekday}, ${day.dateLabel}`), margin + 20, y + 6);
-        y += 13;
+        pdf.text(toPdfSafeText(day.weekday), margin + 20, y + 7.2);
+        const weekdayWidth = pdf.getTextWidth(toPdfSafeText(day.weekday));
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(9.5);
+        setInk(pdf, COLOR.muted);
+        pdf.text(toPdfSafeText(day.dateLabel), margin + 22 + weekdayWidth, y + 7.2);
+        const eventCount = (day.events || []).length;
+        fieldLabel(pdf, `${eventCount} ${eventCount === 1 ? 'evento' : 'eventos'}`, pageW - margin - 3, y + 7, { size: 5.8, spacing: 0.6, align: 'right' });
+        y += 15;
+
+        const railX = margin + timeWidth + 1.1;
+        const railTop = y - 1;
+        const railPage = pdf.internal.getNumberOfPages();
 
         (day.events || []).forEach((event) => {
           pdf.setFont('helvetica', 'bold');
@@ -727,25 +743,27 @@ export class PDFExporter {
           const titleLine = toPdfSafeText(event.title) || 'Evento';
           const titleLines = pdf.splitTextToSize(titleLine, textWidth);
 
-          const detalhe = [event.location, event.summary]
+          const metaLine = [event.typeLabel, event.location]
             .map(toPdfSafeText)
             .filter(Boolean)
-            .join(' — ');
-          pdf.setFont('helvetica', 'normal');
+            .join(' · ');
+          pdf.setFont('helvetica', 'italic');
           pdf.setFontSize(9);
-          const detailLines = detalhe ? pdf.splitTextToSize(detalhe, textWidth) : [];
+          const summary = toPdfSafeText(event.summary);
+          const summaryLines = summary ? pdf.splitTextToSize(summary, textWidth) : [];
+          const detailLines = summaryLines; // usado no cálculo de altura abaixo
 
-          const height = titleLines.length * 4.6 + detailLines.length * 4.2 + 3.5;
+          const height = titleLines.length * 4.6 + (metaLine ? 3.8 : 0) + summaryLines.length * 4.2 + 4;
           ensureSpace(height);
           const top = y;
 
           // Hora em monoespaçada (ou o tipo, quando o evento é o dia todo)
           dataText(pdf, event.time || '', margin, top + 3.6, { size: 9, color: COLOR.terracotta });
 
-          // Marcador colorido por tipo
+          // Marcador colorido por tipo, sobre o trilho da linha do tempo
           const typeColor = TYPE_COLOR[event.type] || COLOR.muted;
           setFill(pdf, typeColor);
-          pdf.rect(margin + timeWidth, top + 1.4, 2.2, 2.2, 'F');
+          pdf.circle(margin + timeWidth + 1.1, top + 2.4, 1.5, 'F');
 
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(10);
@@ -756,11 +774,16 @@ export class PDFExporter {
             cursorY += 4.6;
           });
 
-          if (detailLines.length) {
-            pdf.setFont('helvetica', 'normal');
+          if (metaLine) {
+            fieldLabel(pdf, metaLine, textX, cursorY - 0.8, { size: 6, spacing: 0.5, color: typeColor });
+            cursorY += 3.8;
+          }
+
+          if (summaryLines.length) {
+            pdf.setFont('helvetica', 'italic');
             pdf.setFontSize(9);
             setInk(pdf, COLOR.muted);
-            detailLines.forEach((line) => {
+            summaryLines.forEach((line) => {
               pdf.text(line, textX, cursorY);
               cursorY += 4.2;
             });
@@ -769,7 +792,14 @@ export class PDFExporter {
           y = top + height;
         });
 
-        y += 3;
+        // Trilho vertical ligando os eventos do dia (só se não houve quebra de página)
+        if ((day.events || []).length > 1 && pdf.internal.getNumberOfPages() === railPage) {
+          setStroke(pdf, COLOR.rule);
+          pdf.setLineWidth(0.3);
+          pdf.line(railX, railTop, railX, y - 2);
+        }
+
+        y += 4;
       });
 
       // ===== Quanto custou =====
@@ -796,15 +826,20 @@ export class PDFExporter {
         }
         y += 1;
 
+        // Barra proporcional por categoria: o olho compara sem ler os números
+        const barX = margin + 46;
+        const barW = contentWidth - 46 - 34;
         (finance.byCategory || []).forEach((item) => {
           const color = TYPE_COLOR[item.category] || COLOR.muted;
-          setFill(pdf, color);
-          pdf.rect(margin, y - 2.2, 2.2, 2.2, 'F');
           pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(9.5);
+          pdf.setFontSize(9);
           setInk(pdf, COLOR.ink);
-          pdf.text(toPdfSafeText(item.label), margin + 4, y);
-          fieldLabel(pdf, `${item.percent}%`, margin + 48, y, { size: 6.5, spacing: 0.4 });
+          pdf.text(pdf.splitTextToSize(toPdfSafeText(item.label), 42)[0], margin, y);
+          setFill(pdf, COLOR.sandDeep);
+          pdf.rect(barX, y - 3, barW, 3.2, 'F');
+          setFill(pdf, color);
+          pdf.rect(barX, y - 3, Math.max(barW * (item.percent / 100), 0.8), 3.2, 'F');
+          fieldLabel(pdf, `${item.percent}%`, barX + barW + 2, y, { size: 6, spacing: 0.3 });
           dataText(pdf, money(item.amount), pageW - margin, y, { size: 9, align: 'right' });
           y += rowH;
         });

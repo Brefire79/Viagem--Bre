@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { pageVariants, storyParagraphVariants, buttonVariants, modalContentVariants } from '../utils/motionVariants';
 import DOMPurify from 'dompurify';
 import { buildTripStory, formatCurrency } from '../utils/tripStory';
+import StoryTimeline from '../components/StoryTimeline';
 
 // Carimbo com data E hora no nome do arquivo. Só com a data, exportar duas vezes
 // no mesmo dia fazia o navegador salvar "arquivo (1)" e manter o antigo intacto —
@@ -367,24 +368,30 @@ const HistoriaPage = () => {
 
       {/* Preview da história com animação progressiva */}
       <motion.div 
-        className="card"
+        className={tripStory.days ? '' : 'card'}
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4, duration: 0.4 }}
       >
-        <div className="prose prose-lg max-w-none">
-          {renderStory(tripStory).map(({ html, index }) => (
-            <motion.div
-              key={index}
-              variants={storyParagraphVariants}
-              initial="hidden"
-              animate="visible"
-              custom={index}
-            >
-              <div dangerouslySetInnerHTML={{ __html: html }} />
-            </motion.div>
-          ))}
-        </div>
+        {tripStory.days ? (
+          // História gerada: linha do tempo visual
+          <StoryTimeline story={tripStory} />
+        ) : (
+          // Texto editado à mão: renderiza o Markdown
+          <div className="prose prose-lg max-w-none">
+            {renderStory(tripStory).map(({ html, index }) => (
+              <motion.div
+                key={index}
+                variants={storyParagraphVariants}
+                initial="hidden"
+                animate="visible"
+                custom={index}
+              >
+                <div dangerouslySetInnerHTML={{ __html: html }} />
+              </motion.div>
+            ))}
+          </div>
+        )}
       </motion.div>
 
       {/* Dica */}

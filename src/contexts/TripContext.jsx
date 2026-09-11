@@ -551,7 +551,13 @@ export const TripProvider = ({ children }) => {
     if (!currentTrip || !db) return { success: false, error: 'Nenhuma viagem selecionada' };
 
     const limpas = (Array.isArray(categoriesList) ? categoriesList : [])
-      .map(item => ({ id: String(item.id), name: String(item.name || '').trim() }))
+      .map(item => ({
+        id: String(item.id),
+        name: String(item.name || '').trim(),
+        // Arquivada: some do formulário, mas continua rotulando as despesas
+        // antigas (apagar não pode mexer no que já foi lançado)
+        archived: Boolean(item.archived)
+      }))
       .filter(item => item.id && item.name);
 
     return updateTrip(currentTrip.id, { customCategories: limpas });
