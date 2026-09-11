@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { splitAddressSegments } from './tripBook';
 import html2canvas from 'html2canvas';
 import {
   COLOR, TYPE_COLOR, PAGE,
@@ -889,6 +890,236 @@ export class PDFExporter {
       return true;
     } catch (error) {
       console.error('Erro ao exportar história da viagem:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Exporta a História no modo Livro: capa, capítulos por dia em fonte
+   * serifada com letra capitular, endereços em letra menor dentro do texto e
+   * epílogo com os valores. Recebe o `book` montado em utils/tripBook.js.
+   *
+   * @param {Object} data - { trip, intro, book }
+   * @param {string} filename - Nome do arquivo (sem extensão)
+   * @returns {Promise<boolean>}
+   */
+  async exportTripBook(data, filename = 'historia-livro') {
+    try {
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const { margin, width: pageW, height: pageH } = PAGE;
+      const trip = data.trip || {};
+      const intro = data.intro || {};
+      const book = data.book || { chapters: [], epilogue: '', closing: {} };
+
+      // Margens de livro: mais generosas que as dos bilhetes
+      const textMargin = margin + 10;
+      const textWidth = pageW - textMargin * 2;
+      const bottom = pageH - 26;
+      const BODY_SIZE = 11.5;
+      const BODY_LEAD = 6.4;
+      const ADDR_SIZE = 8.5;
+
+      // Papel
+      const paintPaper = () => {
+        setFill(pdf, COLOR.sand);
+        pdf.rect(0, 0, pageW, pageH, 'F');
+      };
+      paintPaper();
+
+      let y = 0;
+      const newPage = () => {
+        pdf.addPage();
+        paintPaper();
+        y = margin + 12;
+      };
+      const ensure = (needed) => {
+        if (y + needed > bottom) newPage();
+      };
+
+      // ===== Capa =====
+      y = 96;
+      fieldLabel(pdf, 'história da viagem', pageW / 2, y, { size: 7.5, color: COLOR.terracotta, spacing: 2, align: 'center' });
+      y += 14;
+      pdf.setFont('times', 'bold');
+      pdf.setFontSize(30);
+      setInk(pdf, COLOR.ink);
+      const titleLines = pdf.splitTextToSize(toPdfSafeText(intro.name || trip.name) || 'Viagem', textWidth);
+      titleLines.forEach((line) => {
+        pdf.text(line, pageW / 2, y, { align: 'center' });
+        y += 13;
+      });
+      y += 2;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      setInk(pdf, COLOR.muted);
+      const meta = [
+        intro.durationDays ? `${intro.durationDays} ${intro.durationDays === 1 ? 'dia' : 'dias'}` : '',
+        intro.period,
+        intro.destination
+      ].filter(Boolean).map(toPdfSafeText).join('  ·  ');
+      pdf.text(meta, pageW / 2, y, { align: 'center' });
+      y += 10;
+      perforation(pdf, pageW / 2 - 25, y, pageW / 2 + 25, { dash: [0.6, 1.4] });
+      y += 10;
+      if (intro.who) {
+        pdf.setFont('times', 'italic');
+        pdf.setFontSize(13);
+        setInk(pdf, COLOR.ink);
+        pdf.text(toPdfSafeText(intro.who), pageW / 2, y, { align: 'center' });
+      }
+      newPage();
+
+      // ===== Parágrafo com trechos em estilos diferentes =====
+      // Quebra o texto palavra a palavra, medindo cada uma na fonte certa, para
+      // o endereço sair menor e cinza no meio da frase.
+      const styleFor = (addr) => {
+        if (addr) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(ADDR_SIZE);
+          setInk(pdf, COLOR.muted);
+        } else {
+          pdf.setFont('times', 'normal');
+          pdf.setFontSize(BODY_SIZE);
+          setInk(pdf, COLOR.ink);
+        }
+      };
+
+      const layoutParagraph = (paragraph, { dropCap = false } = {}) => {
+        const segments = splitAddressSegments(paragraph).map(seg => ({
+          addr: seg.addr,
+          text: seg.addr ? `(${seg.text})` : seg.text
+        }));
+
+        // Palavras com estilo, preservando espaços (o toPdfSafeText é aplicado
+        // por palavra para não perder o espaço entre a frase e o endereço)
+        const words = [];
+        segments.forEach((seg) => {
+          seg.text.split(/(\s+)/).forEach((piece) => {
+            if (!piece) return;
+            const isSpace = /^\s+$/.test(piece);
+            const text = isSpace ? ' ' : toPdfSafeText(piece);
+            if (text) words.push({ text, addr: seg.addr, space: isSpace });
+          });
+        });
+
+        let capital = '';
+        if (dropCap && words.length && !words[0].addr && !words[0].space) {
+          capital = words[0].text.charAt(0);
+          words[0] = { ...words[0], text: words[0].text.slice(1) };
+        }
+
+        // Letra capitular ocupa duas linhas à esquerda
+        const capWidth = capital ? 11 : 0;
+        const lines = [];
+        let current = [];
+        let currentWidth = 0;
+        const widthOf = (word) => { styleFor(word.addr); return pdf.getTextWidth(word.text); };
+        const lineLimit = () => textWidth - (lines.length < 2 ? capWidth : 0);
+
+        words.forEach((word) => {
+          const w = widthOf(word);
+          if (!word.space && currentWidth + w > lineLimit() && current.length) {
+            // remove espaço no fim da linha
+            while (current.length && current[current.length - 1].space) current.pop();
+            lines.push(current);
+            current = [];
+            currentWidth = 0;
+          }
+          if (word.space && current.length === 0) return;
+          current.push(word);
+          currentWidth += w;
+        });
+        if (current.length) lines.push(current);
+
+        ensure(BODY_LEAD * Math.min(lines.length, 2) + 2);
+
+        if (capital) {
+          pdf.setFont('times', 'bold');
+          pdf.setFontSize(30);
+          setInk(pdf, COLOR.ocean);
+          pdf.text(capital, textMargin, y + BODY_LEAD + 2.6);
+        }
+
+        lines.forEach((line, lineIndex) => {
+          if (lineIndex > 0) ensure(BODY_LEAD);
+          let x = textMargin + (capital && lineIndex < 2 ? capWidth : 0);
+          line.forEach((word) => {
+            styleFor(word.addr);
+            pdf.text(word.text, x, y + 4);
+            x += pdf.getTextWidth(word.text);
+          });
+          y += BODY_LEAD;
+        });
+        y += 3;
+      };
+
+      // ===== Capítulos =====
+      const chapterHeading = (kicker, title, subtitle) => {
+        ensure(40);
+        if (y > margin + 12) y += 6;
+        fieldLabel(pdf, kicker, textMargin, y, { size: 7, color: COLOR.terracotta, spacing: 1.6 });
+        y += 8;
+        pdf.setFont('times', 'bold');
+        pdf.setFontSize(19);
+        setInk(pdf, COLOR.ink);
+        pdf.splitTextToSize(toPdfSafeText(title), textWidth).forEach((line) => {
+          pdf.text(line, textMargin, y);
+          y += 8.5;
+        });
+        if (subtitle) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          setInk(pdf, COLOR.muted);
+          pdf.text(toPdfSafeText(subtitle), textMargin, y - 1);
+          y += 6;
+        }
+        y += 3;
+      };
+
+      book.chapters.forEach((chapter, index) => {
+        if (index > 0) {
+          ensure(50);
+          perforation(pdf, textMargin, y + 2, pageW - textMargin, { dash: [0.6, 1.6] });
+          y += 8;
+        }
+        chapterHeading(`capítulo ${chapter.number}`, chapter.title, chapter.dateLabel);
+        chapter.paragraphs.forEach((paragraph, pIndex) => layoutParagraph(paragraph, { dropCap: pIndex === 0 }));
+      });
+
+      // ===== Epílogo =====
+      if (book.epilogue) {
+        ensure(50);
+        perforation(pdf, textMargin, y + 2, pageW - textMargin, { dash: [0.6, 1.6] });
+        y += 8;
+        chapterHeading('epílogo', 'Quanto custou o sonho');
+        layoutParagraph(book.epilogue);
+      }
+
+      // ===== Fecho =====
+      ensure(24);
+      y += 8;
+      pdf.setFont('times', 'italic');
+      pdf.setFontSize(12);
+      setInk(pdf, COLOR.ink);
+      pdf.text('— Fim —', pageW / 2, y, { align: 'center' });
+      y += 7;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8.5);
+      setInk(pdf, COLOR.muted);
+      const closing = [book.closing?.who, book.closing?.date ? `escrito em ${book.closing.date}` : '']
+        .filter(Boolean).map(toPdfSafeText).join('  ·  ');
+      if (closing) pdf.text(closing, pageW / 2, y, { align: 'center' });
+
+      // ===== Rodapé =====
+      drawFooters(pdf, {
+        docLabel: toPdfSafeText(trip.name),
+        generatedAt: `${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      });
+
+      pdf.save(`${filename}.pdf`);
+      return true;
+    } catch (error) {
+      console.error('Erro ao exportar o livro da viagem:', error);
       return false;
     }
   }

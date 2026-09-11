@@ -455,3 +455,13 @@
     min-width: 44px;
   }
 }
+
+/* Letra capitular do modo Livro da História */
+.story-dropcap::first-letter {
+  float: left;
+  font-size: 3.4em;
+  line-height: 0.85;
+  padding: 0.08em 0.12em 0 0;
+  color: #1E4763;
+  font-weight: 700;
+}
