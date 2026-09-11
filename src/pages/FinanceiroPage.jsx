@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { 
   Plus, Plane, Car, Hotel, MapPin, UtensilsCrossed, MoreHorizontal,
   DollarSign, TrendingUp, Users, X, Edit2, Trash2, Receipt, Download,
-  Wallet, PiggyBank, HeartHandshake
+  Wallet, PiggyBank, HeartHandshake, Tag
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -13,7 +13,7 @@ import { pageVariants, cardVariants, buttonVariants, modalOverlayVariants, modal
 
 const FinanceiroPage = () => {
   const { user } = useAuth();
-  const { expenses, addExpense, updateExpense, deleteExpense, saveCaixas, currentTrip, participants, participantsData } = useTrip();
+  const { expenses, addExpense, updateExpense, deleteExpense, saveCaixas, saveCustomCategories, currentTrip, participants, participantsData } = useTrip();
   const [showModal, setShowModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [formData, setFormData] = useState({
@@ -37,15 +37,30 @@ const FinanceiroPage = () => {
   const [editingCaixa, setEditingCaixa] = useState(null);
   const [caixaForm, setCaixaForm] = useState({ name: '', amount: '' });
 
-  // Categorias de despesas
-  const categories = {
-    aereo: { icon: Plane, label: 'Aéreo', color: 'bg-ocean' },
-    transfer: { icon: Car, label: 'Transfer', color: 'bg-aqua' },
-    hospedagem: { icon: Hotel, label: 'Hospedagem', color: 'bg-purple-500' },
-    passeios: { icon: MapPin, label: 'Passeios', color: 'bg-green-500' },
-    alimentacao: { icon: UtensilsCrossed, label: 'Alimentação', color: 'bg-orange-500' },
-    outros: { icon: MoreHorizontal, label: 'Outros', color: 'bg-gray-500' }
-  };
+  // Categorias de despesas: as seis fixas mais as criadas pelo usuário nesta
+  // viagem (trip.customCategories). As extras usam o mesmo ícone e ganham cor
+  // por ordem de criação.
+  const customCategories = useMemo(
+    () => (Array.isArray(currentTrip?.customCategories) ? currentTrip.customCategories : []),
+    [currentTrip?.customCategories]
+  );
+  const CUSTOM_COLORS = ['bg-teal-600', 'bg-pink-500', 'bg-indigo-500', 'bg-amber-600', 'bg-cyan-600', 'bg-rose-600'];
+  const categories = useMemo(() => {
+    const base = {
+      aereo: { icon: Plane, label: 'Aéreo', color: 'bg-ocean' },
+      transfer: { icon: Car, label: 'Transfer', color: 'bg-aqua' },
+      hospedagem: { icon: Hotel, label: 'Hospedagem', color: 'bg-purple-500' },
+      passeios: { icon: MapPin, label: 'Passeios', color: 'bg-green-500' },
+      alimentacao: { icon: UtensilsCrossed, label: 'Alimentação', color: 'bg-orange-500' },
+      outros: { icon: MoreHorizontal, label: 'Outros', color: 'bg-gray-500' }
+    };
+    customCategories.forEach((item, index) => {
+      base[item.id] = { icon: Tag, label: item.name, color: CUSTOM_COLORS[index % CUSTOM_COLORS.length], custom: true };
+    });
+    return base;
+  }, [customCategories]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryForm, setCategoryForm] = useState('');
 
   // Função para exportar PDF
   const handleExportPDF = async () => {
@@ -67,7 +82,9 @@ const FinanceiroPage = () => {
       expenses: sortedExpenses.map(expense => ({
         ...expense,
         paidByName: getParticipantName(expense.paidBy),
-        caixaName: caixas.find(caixa => caixa.id === expense.caixaId)?.name || 'Viagem'
+        caixaName: caixas.find(caixa => caixa.id === expense.caixaId)?.name || 'Viagem',
+        categoryLabel: (categories[expense.category] || categories.outros).label,
+        categoryIsCustom: Boolean(categories[expense.category]?.custom)
       })),
       // O relatório mostra os mesmos números do topo da tela: o total é tudo que
       // foi lançado, com pago e pendente discriminados. Antes o "gasto médio"
@@ -432,6 +449,59 @@ const FinanceiroPage = () => {
       handleCloseCaixaModal();
     } else {
       alert('Erro ao salvar caixa: ' + (result.error || 'Erro desconhecido'));
+    }
+  };
+
+  // ===== Categorias extras (criar / apagar) =====
+  const handleOpenCategoryModal = () => {
+    setCategoryForm('');
+    document.body.style.overflow = 'hidden';
+    setShowCategoryModal(true);
+  };
+
+  const handleCloseCategoryModal = () => {
+    document.body.style.overflow = '';
+    setShowCategoryModal(false);
+  };
+
+  const handleSubmitCategory = async (e) => {
+    e.preventDefault();
+    const name = categoryForm.trim();
+    if (!name) {
+      alert('Dê um nome para a categoria (ex.: Compras, Gasolina)');
+      return;
+    }
+    const normaliza = (texto) => String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const jaExiste = Object.values(categories).some(item => normaliza(item.label) === normaliza(name));
+    if (jaExiste) {
+      alert('Já existe uma categoria com esse nome');
+      return;
+    }
+
+    const nova = { id: `cat_${Date.now().toString(36)}`, name };
+    const result = await saveCustomCategories([...customCategories, nova]);
+    if (result.success) {
+      // Já deixa a categoria nova selecionada na despesa que está sendo lançada
+      setFormData(prev => ({ ...prev, category: nova.id }));
+      handleCloseCategoryModal();
+    } else {
+      alert('Erro ao criar categoria: ' + (result.error || 'Erro desconhecido'));
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId) => {
+    const item = customCategories.find(c => c.id === categoryId);
+    if (!item) return;
+    const usadas = expenses.filter(exp => exp.category === categoryId).length;
+    const aviso = usadas > 0
+      ? `Apagar a categoria "${item.name}"? ${usadas} ${usadas === 1 ? 'despesa passa' : 'despesas passam'} a contar como "Outros".`
+      : `Apagar a categoria "${item.name}"?`;
+    if (!window.confirm(aviso)) return;
+    const result = await saveCustomCategories(customCategories.filter(c => c.id !== categoryId));
+    if (result.success) {
+      if (formData.category === categoryId) setFormData(prev => ({ ...prev, category: 'outros' }));
+    } else {
+      alert('Erro ao apagar categoria: ' + (result.error || 'Erro desconhecido'));
     }
   };
 
@@ -999,21 +1069,40 @@ const FinanceiroPage = () => {
                   Categoria *
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {Object.entries(categories).map(([key, { icon: Icon, label, color }]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => handleSelectCategory(key)}
-                      className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all ${
-                        formData.category === key
-                          ? `${color} border-transparent text-white`
-                          : 'border-sand-300 hover:border-sand-400'
-                      }`}
-                    >
-                      <Icon className="w-5 h-5" />
-                      <span className="text-sm font-medium">{label}</span>
-                    </button>
+                  {Object.entries(categories).map(([key, { icon: Icon, label, color, custom }]) => (
+                    <div key={key} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectCategory(key)}
+                        className={`w-full flex items-center gap-2 p-3 rounded-xl border-2 transition-all ${
+                          formData.category === key
+                            ? `${color} border-transparent text-white`
+                            : 'border-sand-300 hover:border-sand-400'
+                        }`}
+                      >
+                        <Icon className="w-5 h-5 flex-shrink-0" />
+                        <span className="text-sm font-medium truncate">{label}</span>
+                      </button>
+                      {custom && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(key)}
+                          className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-sand-300 text-red-500 flex items-center justify-center shadow-sm hover:bg-red-50"
+                          aria-label={`Apagar categoria ${label}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   ))}
+                  <button
+                    type="button"
+                    onClick={handleOpenCategoryModal}
+                    className="flex items-center gap-2 p-3 rounded-xl border-2 border-dashed border-ocean-200 text-ocean hover:border-ocean hover:bg-ocean-50 transition-all"
+                  >
+                    <Plus className="w-5 h-5" />
+                    <span className="text-sm font-medium">Nova categoria</span>
+                  </button>
                 </div>
               </div>
 
@@ -1156,6 +1245,64 @@ const FinanceiroPage = () => {
           </div>
         </div>
       )}
+      {/* Modal de nova categoria (fica por cima do modal da despesa) */}
+      {showCategoryModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseCategoryModal();
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-md w-full animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-sand-300">
+              <h2 className="text-2xl font-bold text-dark flex items-center gap-2">
+                <Tag className="w-6 h-6 text-ocean" />
+                Nova Categoria
+              </h2>
+              <button
+                type="button"
+                onClick={handleCloseCategoryModal}
+                className="p-2 hover:bg-sand-200 rounded-lg transition-all"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5 text-dark" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitCategory} className="p-4 md:p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-dark-100 mb-2">
+                  Nome da categoria *
+                </label>
+                <input
+                  type="text"
+                  value={categoryForm}
+                  onChange={(e) => setCategoryForm(e.target.value)}
+                  className="input"
+                  placeholder="Ex: Compras, Gasolina, Ingressos"
+                  maxLength={30}
+                  autoFocus
+                  required
+                />
+                <p className="text-xs text-sand-500 mt-1">
+                  Vale para esta viagem. Aparece no Financeiro, na História e nos PDFs.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={handleCloseCategoryModal} className="btn-outline flex-1">
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-primary flex-1">
+                  Criar categoria
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal de criar/editar caixa */}
       {showCaixaModal && (
         <div

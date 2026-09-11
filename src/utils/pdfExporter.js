@@ -305,8 +305,8 @@ export class PDFExporter {
           });
 
           // Categoria e pagador
-          const category = toPdfSafeText(expense.category) || 'outros';
-          const categoryColor = TYPE_COLOR[category] || COLOR.muted;
+          const category = toPdfSafeText(expense.categoryLabel || expense.category) || 'outros';
+          const categoryColor = TYPE_COLOR[expense.category] || COLOR.muted;
           setFill(pdf, categoryColor);
           pdf.rect(textX, cursorY - 2.4, 2.1, 2.1, 'F');
 

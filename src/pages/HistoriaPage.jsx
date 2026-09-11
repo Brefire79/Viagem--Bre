@@ -71,7 +71,7 @@ const HistoriaPage = () => {
       .filter(Boolean);
 
     return buildTripStory({ trip: currentTrip, events, expenses, participantNames });
-  }, [currentTrip, currentTrip?.startDate, currentTrip?.endDate, currentTrip?.caixas, events, expenses, participants, participantsData, manualStory]);
+  }, [currentTrip, currentTrip?.startDate, currentTrip?.endDate, currentTrip?.caixas, currentTrip?.customCategories, events, expenses, participants, participantsData, manualStory]);
 
   const handleCopy = async () => {
     if (tripStory) {

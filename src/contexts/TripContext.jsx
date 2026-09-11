@@ -543,6 +543,20 @@ export const TripProvider = ({ children }) => {
     return updateTrip(currentTrip.id, { caixas: limpas });
   };
 
+  // ========== CATEGORIAS EXTRAS DE DESPESA ==========
+  // Além das seis fixas (aereo, transfer, ...), a viagem pode ter categorias
+  // próprias em `trips/{id}.customCategories` = [{ id, name }]. A despesa
+  // guarda o `id` em `category`, como já faz com as fixas.
+  const saveCustomCategories = async (categoriesList) => {
+    if (!currentTrip || !db) return { success: false, error: 'Nenhuma viagem selecionada' };
+
+    const limpas = (Array.isArray(categoriesList) ? categoriesList : [])
+      .map(item => ({ id: String(item.id), name: String(item.name || '').trim() }))
+      .filter(item => item.id && item.name);
+
+    return updateTrip(currentTrip.id, { customCategories: limpas });
+  };
+
   // ========== OPERAÇÕES COM DESPESAS ==========
 
   const addExpense = async (expenseData) => {
@@ -689,7 +703,8 @@ export const TripProvider = ({ children }) => {
     addExpense,
     updateExpense,
     deleteExpense,
-    saveCaixas // Substitui a lista de caixas (reservas) da viagem atual
+    saveCaixas, // Substitui a lista de caixas (reservas) da viagem atual
+    saveCustomCategories // Substitui a lista de categorias extras da viagem atual
   };
 
   return (

@@ -151,12 +151,14 @@ export const buildTripStory = ({ trip, events = [], expenses = [], participantNa
     acc[category] = (acc[category] || 0) + amountOf(exp);
     return acc;
   }, {});
+  const customLabels = (Array.isArray(trip.customCategories) ? trip.customCategories : [])
+    .reduce((acc, item) => ({ ...acc, [item.id]: item.name }), {});
   const byCategory = Object.entries(byCategoryMap)
     .filter(([, amount]) => amount > 0)
     .sort(([, a], [, b]) => b - a)
     .map(([category, amount]) => ({
       category,
-      label: EXPENSE_CATEGORY_LABELS[category] || capitalize(category),
+      label: EXPENSE_CATEGORY_LABELS[category] || customLabels[category] || capitalize(category),
       amount,
       percent: total > 0 ? Math.round((amount / total) * 100) : 0
     }));
