@@ -146,7 +146,7 @@ const Layout = ({ children }) => {
       
       {/* Footer com versão */}
       <footer className="bg-sand-100 border-t border-sand-300 py-2 px-4 text-center text-xs text-sand-600 md:hidden">
-        <span>v1.0.0</span>
+        <span>v{__APP_VERSION__}</span>
       </footer>
 
       {/* Bottom Navigation (Mobile) - Hidden by default, show on hover/touch */}
