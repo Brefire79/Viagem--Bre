@@ -684,12 +684,17 @@ const FinanceiroPage = () => {
       </motion.div>
 
       {/* 2️⃣ NOSSO CAIXA - a viagem é do casal, o dinheiro é um só.
-          O saldo "quem deve a quem" continua calculado (História e PDF usam),
-          mas aqui o que interessa é reservado x lançado. */}
+          Compara APENAS o que saiu das caixas com o que foi reservado nelas.
+          O que foi pago com "Viagem" (aéreo, hotel, carro...) é dinheiro
+          guardado à parte e não desconta de caixa nenhuma - misturar os dois
+          fazia o bloco dizer "passou R$ 12 mil" logo que as caixas diminuíam. */}
       {(() => {
-        const sobra = calculations.totalReservado - calculations.totalGeral;
+        const gastoCaixas = Object.values(calculations.byCaixa).reduce((sum, valor) => sum + valor, 0);
+        const sobra = calculations.totalReservado - gastoCaixas;
         const temReserva = calculations.totalReservado > 0;
-        const estourou = temReserva && sobra < 0;
+        const estourou = temReserva && sobra < -0.005;
+        const tom600 = estourou ? 'text-orange-600' : 'text-green-600';
+        const tom700 = estourou ? 'text-orange-700' : 'text-green-700';
         return (
           <motion.div
             className={`card mb-6 border-4 ${estourou ? 'border-orange-400 bg-orange-50' : 'border-green-400 bg-green-50'}`}
@@ -698,35 +703,41 @@ const FinanceiroPage = () => {
             transition={{ delay: 0.5, type: 'spring' }}
           >
             <div className="text-center py-4 md:py-6">
-              <HeartHandshake className={`w-12 h-12 mx-auto mb-3 ${estourou ? 'text-orange-600' : 'text-green-600'}`} />
-              <h2 className={`text-xl md:text-2xl lg:text-3xl font-black mb-1 ${estourou ? 'text-orange-700' : 'text-green-700'}`}>
-                Nosso caixa da viagem
+              <HeartHandshake className={`w-12 h-12 mx-auto mb-3 ${tom600}`} />
+              <h2 className={`text-xl md:text-2xl lg:text-3xl font-black mb-1 ${tom700}`}>
+                Nossas caixas
               </h2>
-              <p className={`text-sm md:text-base mb-5 px-4 ${estourou ? 'text-orange-600' : 'text-green-600'}`}>
-                Tudo que foi lançado é nosso, em conjunto
+              <p className={`text-sm md:text-base mb-5 px-4 ${tom600}`}>
+                Dinheiro que cada um separou para gastar na viagem
               </p>
               <div className="grid grid-cols-3 gap-2 md:gap-4 px-2">
                 <div>
-                  <p className={`text-xs mb-1 ${estourou ? 'text-orange-600' : 'text-green-600'}`}>Reservado</p>
+                  <p className={`text-xs mb-1 ${tom600}`}>Reservado</p>
                   <p className="text-lg md:text-2xl font-black text-dark truncate">
                     {temReserva ? formatCurrency(calculations.totalReservado) : '—'}
                   </p>
                 </div>
                 <div>
-                  <p className={`text-xs mb-1 ${estourou ? 'text-orange-600' : 'text-green-600'}`}>Lançado</p>
+                  <p className={`text-xs mb-1 ${tom600}`}>Gasto das caixas</p>
                   <p className="text-lg md:text-2xl font-black text-dark truncate">
-                    {formatCurrency(calculations.totalGeral)}
+                    {formatCurrency(gastoCaixas)}
                   </p>
                 </div>
                 <div>
-                  <p className={`text-xs mb-1 ${estourou ? 'text-orange-600' : 'text-green-600'}`}>
+                  <p className={`text-xs mb-1 ${tom600}`}>
                     {estourou ? 'Passou' : 'Ainda sobra'}
                   </p>
-                  <p className={`text-lg md:text-2xl font-black truncate ${estourou ? 'text-orange-600' : 'text-green-600'}`}>
+                  <p className={`text-lg md:text-2xl font-black truncate ${tom600}`}>
                     {temReserva ? formatCurrency(Math.abs(sobra)) : '—'}
                   </p>
                 </div>
               </div>
+              {calculations.semCaixa > 0 && (
+                <p className="text-xs text-sand-600 mt-4 px-4">
+                  Além disso, <strong className="text-dark">{formatCurrency(calculations.semCaixa)}</strong> foram pagos com dinheiro da Viagem
+                  (aéreo, hotel, carro…) — já guardado à parte, não desconta das caixas.
+                </p>
+              )}
               {!temReserva && (
                 <p className="text-xs text-sand-500 mt-4 px-4">
                   Crie caixas abaixo com o dinheiro separado para a viagem e acompanhe o que sobra.
@@ -830,11 +841,6 @@ const FinanceiroPage = () => {
           </div>
         )}
 
-        {caixas.length > 0 && calculations.semCaixa > 0 && (
-          <p className="text-xs text-sand-500 mt-3 px-1">
-            {formatCurrency(calculations.semCaixa)} pagos com dinheiro da Viagem (fora das caixas) — edite a despesa se saiu de uma caixa.
-          </p>
-        )}
       </motion.div>
 
       {/* Botão adicionar despesa */}
