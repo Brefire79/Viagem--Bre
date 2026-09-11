@@ -29,6 +29,22 @@ export class PWAUpdater {
 
       console.log('Service Worker registrado com sucesso');
 
+      // Quando um SW novo assume o controle de uma aba que já estava sob um SW
+      // antigo, recarrega uma vez. Assim o celular instalado pega a versão nova
+      // ao abrir o app, sem depender de tocar no aviso. Na primeira instalação
+      // não há controller anterior, então não recarrega.
+      const tinhaController = Boolean(navigator.serviceWorker.controller);
+      let recarregou = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!tinhaController || recarregou) return;
+        recarregou = true;
+        window.location.reload();
+      });
+
+      // Confere na hora se há versão nova (o navegador só faz isso sozinho a
+      // cada 24h ou em navegação, e o app instalado raramente navega)
+      this.checkForUpdates();
+
       // Verifica atualizações periodicamente (a cada hora)
       setInterval(() => {
         this.checkForUpdates();
@@ -100,10 +116,8 @@ export class PWAUpdater {
     // Envia mensagem para o SW ativar
     this.registration.waiting.postMessage({ type: 'SKIP_WAITING' });
 
-    // Recarrega quando o novo SW assumir o controle
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      window.location.reload();
-    });
+    // O listener de controllerchange registrado em register() recarrega a
+    // página quando o novo SW assumir o controle
   }
 }
 

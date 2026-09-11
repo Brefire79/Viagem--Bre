@@ -1,4 +1,6 @@
-const CACHE_VERSION = 'v1.0.0';
+// Subir a versão força os celulares a trocar o SW e limpar o cache antigo na
+// próxima abertura (o app recarrega sozinho ao assumir o controle).
+const CACHE_VERSION = 'v1.1.0';
 const CACHE_NAME = `viagem-colaborativa-${CACHE_VERSION}`;
 
 // Workbox injeta automaticamente os arquivos aqui
