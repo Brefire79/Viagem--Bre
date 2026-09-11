@@ -645,160 +645,203 @@ export class PDFExporter {
   }
 
   /**
-   * Exporta a história da viagem como PDF
-   * @param {Object} data - Dados da história
-   * @param {string} filename - Nome do arquivo
+   * Exporta a história da viagem como PDF: um bloco por dia, com os eventos em
+   * uma linha cada (hora, tipo, título, resumo curto), e o "Quanto custou" com
+   * os mesmos números do Financeiro. Desenha a partir da estrutura montada em
+   * utils/tripStory.js - não interpreta o Markdown - para o PDF nunca divergir
+   * do que a tela mostra.
+   *
+   * @param {Object} data - { trip, intro, days, finance }
+   * @param {string} filename - Nome do arquivo (sem extensão)
    * @returns {Promise<boolean>}
    */
   async exportTripStory(data, filename = 'historia-viagem') {
     try {
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-      const { margin, width: pageW, contentWidth } = PAGE;
-      const maxWidth = contentWidth;
+      const { margin, width: pageW, contentWidth, bottomLimit } = PAGE;
       const trip = data.trip || {};
+      const intro = data.intro || {};
+      const days = Array.isArray(data.days) ? data.days : [];
+      const finance = data.finance || null;
 
-      // ===== Cabeçalho (mesmo sistema do roteiro e do financeiro) =====
-      let yPosition = drawHeader(pdf, {
+      const money = (value) => {
+        const number = Number(value);
+        return `R$ ${(isNaN(number) ? 0 : number).toFixed(2).replace('.', ',')}`;
+      };
+
+      let y = drawHeader(pdf, {
         kind: 'história da viagem',
         title: toPdfSafeText(trip.name) || 'Viagem',
-        subtitle: toPdfSafeText(trip.destination)
+        subtitle: toPdfSafeText(trip.destination),
+        stampLabel: 'duração',
+        stampValue: intro.durationDays ? `${intro.durationDays} ${intro.durationDays === 1 ? 'dia' : 'dias'}` : ''
       });
 
-      yPosition += 2;
+      y = drawFieldStrip(pdf, [
+        { label: 'período', value: toPdfSafeText(intro.shortPeriod || intro.period) },
+        { label: 'viajantes', value: toPdfSafeText(intro.who) },
+        { label: 'total', value: finance && finance.count ? money(finance.total) : '' }
+      ], y);
 
-      // História.
-      // O texto vem em Markdown com emojis; aqui os marcadores viram formatação
-      // real (títulos em negrito, listas com bullet) e os caracteres que a fonte
-      // do PDF não suporta são removidos.
-      if (data.story) {
-        const storyBlocks = String(data.story).split('\n');
-        let tituloPrincipalIgnorado = false;
+      const ensureSpace = (needed) => {
+        if (y + needed > bottomLimit) {
+          pdf.addPage();
+          y = margin + 6;
+          return true;
+        }
+        return false;
+      };
 
-        storyBlocks.forEach((rawLine) => {
-          const headingMatch = rawLine.match(/^(#{1,3})\s+(.*)$/);
-          const isListItem = /^[-*]\s+/.test(rawLine);
+      // ===== Dia a dia =====
+      const timeWidth = 14;
+      const dotWidth = 4;
+      const textX = margin + timeWidth + dotWidth;
+      const textWidth = contentWidth - timeWidth - dotWidth;
 
-          // O nome da viagem já está no cabeçalho: pula o primeiro título
-          if (headingMatch && headingMatch[1].length === 1 && !tituloPrincipalIgnorado) {
-            tituloPrincipalIgnorado = true;
-            return;
-          }
-
-          // Remove marcadores de Markdown e caracteres não suportados
-          let content = rawLine
-            .replace(/^(#{1,3})\s+/, '')
-            .replace(/^[-*]\s+/, '')
-            .replace(/\*\*(.+?)\*\*/g, '$1')
-            .replace(/\*(.+?)\*/g, '$1');
-
-          content = toPdfSafeText(content);
-
-          // Linha divisória do Markdown
-          if (/^-{3,}$/.test(rawLine.trim())) {
-            if (yPosition > 270) { pdf.addPage(); yPosition = margin; }
-            pdf.setDrawColor(200, 200, 200);
-            pdf.setLineWidth(0.3);
-            pdf.line(margin, yPosition, margin + maxWidth, yPosition);
-            yPosition += 6;
-            return;
-          }
-
-          // Linha em branco vira espaçamento
-          if (!content) {
-            yPosition += 3;
-            return;
-          }
-
-          if (headingMatch) {
-            const level = headingMatch[1].length;
-            const fontSize = level === 1 ? 16 : level === 2 ? 13 : 11.5;
-            yPosition += level === 1 ? 4 : 3;
-            if (yPosition > 265) { pdf.addPage(); yPosition = margin; }
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(fontSize);
-            pdf.setTextColor(0, 51, 102);
-          } else {
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(11);
-            pdf.setTextColor(0, 0, 0);
-          }
-
-          const indent = isListItem ? 5 : 0;
-          const prefix = isListItem ? '· ' : ''; // bullet do WinAnsi
-          const lines = pdf.splitTextToSize(prefix + content, maxWidth - indent);
-
-          lines.forEach((line) => {
-            if (yPosition > 270) {
-              pdf.addPage();
-              yPosition = margin;
-            }
-            pdf.text(line, margin + indent, yPosition);
-            yPosition += headingMatch ? 7 : 6;
-          });
-
-          if (headingMatch) yPosition += 2;
-        });
+      if (!days.length) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(10.5);
+        setInk(pdf, COLOR.muted);
+        pdf.text('Nenhum evento no período da viagem.', margin, y + 4);
+        y += 10;
       }
 
-      // Eventos detalhados
-      if (data.events && data.events.length > 0) {
-        yPosition += 8;
+      days.forEach((day) => {
+        // Cabeçalho do dia não pode ficar órfão no rodapé: exige espaço para
+        // ele e para a primeira linha de evento
+        ensureSpace(22);
 
-        // O título não pode ficar sozinho no rodapé: só permanece nesta página
-        // se o primeiro evento couber junto (o laço abaixo quebra a partir de 250)
-        if (yPosition > 236) {
-          pdf.addPage();
-          yPosition = margin + 6;
-        }
-
-        fieldLabel(pdf, 'eventos da viagem', margin, yPosition, { size: 7, color: COLOR.ocean, spacing: 1 });
-        yPosition += 4;
-        perforation(pdf, margin, yPosition, pageW - margin);
-        yPosition += 7;
-
-        pdf.setFont('helvetica', 'normal');
+        setFill(pdf, COLOR.sandDeep);
+        pdf.rect(margin, y, contentWidth, 9, 'F');
+        fieldLabel(pdf, `dia ${day.dayNumber}`, margin + 3, y + 5.8, { size: 6.5, color: COLOR.terracotta, spacing: 1 });
+        pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(10);
+        setInk(pdf, COLOR.ink);
+        pdf.text(toPdfSafeText(`${day.weekday}, ${day.dateLabel}`), margin + 20, y + 6);
+        y += 13;
 
-        data.events.forEach((event, index) => {
-          if (yPosition > 250) { // Nova página se necessário
-            pdf.addPage();
-            yPosition = margin;
-          }
+        (day.events || []).forEach((event) => {
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(10);
+          const titleLine = toPdfSafeText(event.title) || 'Evento';
+          const titleLines = pdf.splitTextToSize(titleLine, textWidth);
 
-          // Eventos são gravados em UTC; formatar pelo fuso local mostraria o dia
-          // anterior para eventos da madrugada.
-          const eventDate = event.date?.toDate ? event.date.toDate() : new Date(event.date);
-          const date = isNaN(eventDate)
-            ? ''
-            : `${String(eventDate.getUTCDate()).padStart(2, '0')}/${String(eventDate.getUTCMonth() + 1).padStart(2, '0')}/${eventDate.getUTCFullYear()}`;
+          const detalhe = [event.location, event.summary]
+            .map(toPdfSafeText)
+            .filter(Boolean)
+            .join(' — ');
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          const detailLines = detalhe ? pdf.splitTextToSize(detalhe, textWidth) : [];
+
+          const height = titleLines.length * 4.6 + detailLines.length * 4.2 + 3.5;
+          ensureSpace(height);
+          const top = y;
+
+          // Hora em monoespaçada (ou o tipo, quando o evento é o dia todo)
+          dataText(pdf, event.time || '', margin, top + 3.6, { size: 9, color: COLOR.terracotta });
+
+          // Marcador colorido por tipo
+          const typeColor = TYPE_COLOR[event.type] || COLOR.muted;
+          setFill(pdf, typeColor);
+          pdf.rect(margin + timeWidth, top + 1.4, 2.2, 2.2, 'F');
 
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(10);
-          pdf.setTextColor(0, 0, 0);
-          pdf.text(toPdfSafeText(`${date} - ${event.title}`), margin, yPosition);
-          yPosition += 6;
+          setInk(pdf, COLOR.ink);
+          let cursorY = top + 3.6;
+          titleLines.forEach((line) => {
+            pdf.text(line, textX, cursorY);
+            cursorY += 4.6;
+          });
 
-          const eventDescription = toPdfSafeText(event.description);
-          if (eventDescription) {
+          if (detailLines.length) {
             pdf.setFont('helvetica', 'normal');
-            const descLines = pdf.splitTextToSize(eventDescription, maxWidth - 10);
-            descLines.forEach((line) => {
-              if (yPosition > 270) {
-                pdf.addPage();
-                yPosition = margin;
-              }
-              pdf.text(line, margin + 5, yPosition);
-              yPosition += 5;
+            pdf.setFontSize(9);
+            setInk(pdf, COLOR.muted);
+            detailLines.forEach((line) => {
+              pdf.text(line, textX, cursorY);
+              cursorY += 4.2;
             });
           }
-          
-          yPosition += 5;
+
+          y = top + height;
         });
+
+        y += 3;
+      });
+
+      // ===== Quanto custou =====
+      if (finance && finance.count > 0) {
+        const rowH = 6;
+        const linhas = 3 + (finance.byCategory?.length || 0) + (finance.caixas?.length ? finance.caixas.length + 3 : 0);
+        ensureSpace(12 + rowH * linhas);
+
+        y += 2;
+        fieldLabel(pdf, 'quanto custou', margin, y, { size: 7, color: COLOR.ocean, spacing: 1 });
+        y += 2;
+        perforation(pdf, margin, y, pageW - margin, { dash: [0.6, 1.4] });
+        y += 7;
+
+        fieldLabel(pdf, 'total da viagem', margin, y, { size: 6, spacing: 0.6 });
+        dataText(pdf, money(finance.total), pageW - margin, y, { size: 11, color: COLOR.ocean, align: 'right' });
+        y += rowH;
+        if (finance.totalPending > 0) {
+          pdf.setFont('helvetica', 'italic');
+          pdf.setFontSize(8.5);
+          setInk(pdf, COLOR.muted);
+          pdf.text(`${money(finance.totalPaid)} pagos · ${money(finance.totalPending)} a pagar`, margin, y);
+          y += rowH;
+        }
+        y += 1;
+
+        (finance.byCategory || []).forEach((item) => {
+          const color = TYPE_COLOR[item.category] || COLOR.muted;
+          setFill(pdf, color);
+          pdf.rect(margin, y - 2.2, 2.2, 2.2, 'F');
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(9.5);
+          setInk(pdf, COLOR.ink);
+          pdf.text(toPdfSafeText(item.label), margin + 4, y);
+          fieldLabel(pdf, `${item.percent}%`, margin + 48, y, { size: 6.5, spacing: 0.4 });
+          dataText(pdf, money(item.amount), pageW - margin, y, { size: 9, align: 'right' });
+          y += rowH;
+        });
+
+        if (finance.caixas?.length) {
+          y += 2;
+          ensureSpace(rowH * (finance.caixas.length + 2));
+          fieldLabel(pdf, 'pago com', margin, y, { size: 6, spacing: 0.6 });
+          const pagoCom = [`Viagem ${money(finance.paidWithTrip)}`]
+            .concat(finance.caixas.filter(c => c.spent > 0).map(c => `${toPdfSafeText(c.name)} ${money(c.spent)}`))
+            .join(' · ');
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          setInk(pdf, COLOR.ink);
+          pdf.text(pagoCom, margin + 22, y);
+          y += rowH + 1;
+
+          fieldLabel(pdf, 'caixas', margin, y, { size: 6, spacing: 0.6 });
+          fieldLabel(pdf, 'reservado', pageW - margin - 31, y, { size: 5.8, spacing: 0.6, align: 'right' });
+          fieldLabel(pdf, 'saldo', pageW - margin, y, { size: 5.8, spacing: 0.6, align: 'right' });
+          y += rowH - 1;
+          finance.caixas.forEach((c) => {
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(9.5);
+            setInk(pdf, COLOR.ink);
+            pdf.text(toPdfSafeText(c.name) || 'Caixa', margin, y);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(8.5);
+            setInk(pdf, COLOR.muted);
+            pdf.text(`gastou ${money(c.spent)}`, margin + 55, y);
+            dataText(pdf, money(c.reserved), pageW - margin - 31, y, { size: 9, align: 'right' });
+            dataText(pdf, (c.balance < 0 ? '-' : '') + money(Math.abs(c.balance)), pageW - margin, y, {
+              size: 9, color: c.balance < -0.005 ? COLOR.terracotta : COLOR.ocean, align: 'right'
+            });
+            y += rowH;
+          });
+        }
       }
 
       // ===== Rodapé =====

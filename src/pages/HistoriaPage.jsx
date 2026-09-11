@@ -3,11 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTrip } from '../contexts/TripContext';
 import { useAuth } from '../contexts/AuthContext';
 import { BookOpen, Sparkles, Download, Copy, Check, Save, FileText, File } from 'lucide-react';
-import { format, differenceInDays } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { pageVariants, storyParagraphVariants, buttonVariants, modalOverlayVariants, modalContentVariants } from '../utils/motionVariants';
+import { format } from 'date-fns';
+import { pageVariants, storyParagraphVariants, buttonVariants, modalContentVariants } from '../utils/motionVariants';
 import DOMPurify from 'dompurify';
-import { toUtcDayStart, toUtcDayEnd, formatUtcDate } from '../utils/dateUtils';
+import { buildTripStory, formatCurrency } from '../utils/tripStory';
 
 // Carimbo com data E hora no nome do arquivo. Só com a data, exportar duas vezes
 // no mesmo dia fazia o navegador salvar "arquivo (1)" e manter o antigo intacto —
@@ -15,7 +14,7 @@ import { toUtcDayStart, toUtcDayEnd, formatUtcDate } from '../utils/dateUtils';
 const exportStamp = () => format(new Date(), "yyyy-MM-dd_HH'h'mm");
 
 const HistoriaPage = () => {
-  const { user } = useAuth();
+  useAuth(); // mantém o hook no lugar caso a página volte a precisar do usuário
   const { currentTrip, events, expenses, participants, participantsData } = useTrip();
   const [copied, setCopied] = useState(false);
   const [showSaveMenu, setShowSaveMenu] = useState(false);
@@ -28,11 +27,8 @@ const HistoriaPage = () => {
       return;
     }
 
-    // Usa os mesmos eventos que a história descreve (já filtrados pelo período
-    // e ordenados), para o PDF não listar evento que o texto não menciona
-    const sortedEvents = tripStory.events || [];
-
-    // Preparar dados para exportação
+    // O PDF desenha a partir da mesma estrutura (dias + finanças) que gerou o
+    // texto da tela, então nunca lista evento ou valor que a História não mostra
     const exportData = {
       trip: {
         name: currentTrip.name,
@@ -40,8 +36,9 @@ const HistoriaPage = () => {
         startDate: currentTrip.startDate,
         endDate: currentTrip.endDate
       },
-      story: tripStory.text,
-      events: sortedEvents
+      intro: tripStory.intro,
+      days: tripStory.days,
+      finance: tripStory.finance
     };
 
     const filename = `historia-${currentTrip.name.toLowerCase().replace(/\s+/g, '-')}-${exportStamp()}`;
@@ -59,262 +56,22 @@ const HistoriaPage = () => {
     }
   };
 
-  // Gera a história da viagem
+  // Gera a história da viagem (dia a dia + quanto custou). A lógica mora em
+  // utils/tripStory.js para o PDF usar exatamente a mesma estrutura.
   const tripStory = useMemo(() => {
-    if (!currentTrip || events.length === 0) return null;
+    if (!currentTrip) return null;
 
     // Se o usuário editou manualmente, prioriza o texto manual
     if (manualStory) {
       return { text: manualStory };
     }
 
-    // Filtra eventos que estão dentro do período da viagem.
-    // Os eventos são gravados em UTC (ver RoteiroPage), então o período também
-    // precisa ser montado em UTC - caso contrário, no fuso do Brasil, eventos da
-    // madrugada do primeiro dia ficavam de fora e a madrugada do dia seguinte ao
-    // fim entrava indevidamente.
-    let filteredEvents = events;
-    if (currentTrip.startDate && currentTrip.endDate) {
-      const tripStart = toUtcDayStart(currentTrip.startDate);
-      const tripEnd = toUtcDayEnd(currentTrip.endDate);
-
-      if (tripStart && tripEnd) {
-        filteredEvents = events.filter(event => {
-          const eventDate = event.date?.toDate?.() || new Date(event.date);
-          if (isNaN(eventDate)) return false;
-          return eventDate >= tripStart && eventDate <= tripEnd;
-        });
-      }
-    }
-
-    if (filteredEvents.length === 0) return null;
-
-    // Ordena eventos por data
-    const sortedEvents = [...filteredEvents].sort((a, b) => {
-      const dateA = a.date?.toDate?.() || new Date(a.date);
-      const dateB = b.date?.toDate?.() || new Date(b.date);
-      return dateA - dateB;
-    });
-
-    // Usa as datas definidas na viagem ou pega do primeiro/último evento
-    let firstDate, lastDate;
-    if (currentTrip.startDate && currentTrip.endDate) {
-      firstDate = toUtcDayStart(currentTrip.startDate);
-      lastDate = toUtcDayStart(currentTrip.endDate);
-    }
-
-    if (!firstDate || !lastDate) {
-      const firstEvent = sortedEvents[0];
-      const lastEvent = sortedEvents[sortedEvents.length - 1];
-      firstDate = firstEvent.date?.toDate?.() || new Date(firstEvent.date);
-      lastDate = lastEvent.date?.toDate?.() || new Date(lastEvent.date);
-    }
-
-    const tripDuration = Math.max(1, differenceInDays(lastDate, firstDate) + 1);
-
-    // Agrupa eventos por tipo
-    const eventsByType = sortedEvents.reduce((acc, event) => {
-      if (!acc[event.type]) acc[event.type] = [];
-      acc[event.type].push(event);
-      return acc;
-    }, {});
-
-    // Cálculos financeiros.
-    // Mesma regra da aba Financeiro: despesas sem status são consideradas pagas
-    // (compatibilidade com dados antigos) e as pendentes ficam de fora do total,
-    // para que os dois lugares nunca mostrem números diferentes.
-    const amountOf = (exp) => {
-      const value = Number(exp.amount);
-      return isNaN(value) ? 0 : value;
-    };
-
-    const paidExpenses = expenses.filter(exp => !exp.status || exp.status === 'pago');
-    const pendingExpenses = expenses.filter(exp => exp.status === 'pendente');
-
-    const totalSpent = paidExpenses.reduce((sum, exp) => sum + amountOf(exp), 0);
-    const totalPending = pendingExpenses.reduce((sum, exp) => sum + amountOf(exp), 0);
-
-    const expensesByCategory = paidExpenses.reduce((acc, exp) => {
-      const category = exp.category || 'outros';
-      acc[category] = (acc[category] || 0) + amountOf(exp);
-      return acc;
-    }, {});
-
-    const formatCurrency = (value) => {
-      return new Intl.NumberFormat('pt-BR', {
-        style: 'currency',
-        currency: 'BRL'
-      }).format(value);
-    };
-
-    const categoryLabels = {
-      aereo: 'passagens aéreas',
-      hospedagem: 'hospedagem',
-      alimentacao: 'alimentação',
-      passeio: 'passeios',
-      transfer: 'transporte',
-      outros: 'outros'
-    };
-
-    // Lista de participantes
     const participantNames = participants
-      .map(id => participantsData[id]?.displayName || id.substring(0, 8))
-      .join(', ');
+      .map(id => participantsData[id]?.displayName || '')
+      .filter(Boolean);
 
-    // Gera a história
-    let story = `# ${currentTrip.name}\n\n`;
-    story += `## Uma Aventura de ${tripDuration} ${tripDuration === 1 ? 'Dia' : 'Dias'}\n\n`;
-    story += `Entre ${formatUtcDate(firstDate)} e ${formatUtcDate(lastDate)}, `;
-    story += participantNames
-      ? `${participantNames} ${participants.length === 1 ? 'embarcou' : 'embarcamos'} em uma jornada memorável. `
-      : `embarcamos em uma jornada memorável. `;
-    story += `Esta é a história de como criamos memórias que vão durar para sempre.\n\n`;
-
-    story += `## 🗺️ Nosso Roteiro\n\n`;
-
-    // Eventos de voo
-    if (eventsByType.voo && eventsByType.voo.length > 0) {
-      story += `### Voando Alto\n\n`;
-      story += `Nossa aventura começou com ${eventsByType.voo.length} ${eventsByType.voo.length === 1 ? 'voo' : 'voos'}, `;
-      story += `levando-nos através dos céus rumo ao destino dos nossos sonhos. `;
-      eventsByType.voo.forEach((event, index) => {
-        story += `${event.title}`;
-        if (event.location) story += ` em ${event.location}`;
-        if (index < eventsByType.voo.length - 1) story += '. ';
-      });
-      story += `.\n\n`;
-    }
-
-    // Eventos de hospedagem
-    if (eventsByType.hospedagem && eventsByType.hospedagem.length > 0) {
-      const hosp = eventsByType.hospedagem[0];
-      story += `### Onde Ficamos\n\n`;
-      story += `Encontramos nosso lar longe de casa em **${hosp.title}**`;
-      if (hosp.location) story += ` (${hosp.location})`;
-      story += `. `;
-      if (hosp.description) story += `${hosp.description}. `;
-      story += `Foi o lugar perfeito para descansar entre as aventuras.\n\n`;
-    }
-
-    // Eventos de passeio
-    if (eventsByType.passeio && eventsByType.passeio.length > 0) {
-      story += `### Explorando o Destino\n\n`;
-      story += `Vivemos ${eventsByType.passeio.length} ${eventsByType.passeio.length === 1 ? 'experiência incrível' : 'experiências incríveis'}:\n\n`;
-      eventsByType.passeio.forEach(event => {
-        const eventDate = event.date?.toDate?.() || new Date(event.date);
-        story += `- **${event.title}** - ${formatUtcDate(eventDate, { withYear: false })}`;
-        if (event.description) story += `: ${event.description}`;
-        story += `\n`;
-      });
-      story += `\n`;
-    }
-
-    // Eventos de alimentação
-    if (eventsByType.alimentacao && eventsByType.alimentacao.length > 0) {
-      story += `### Sabores da Viagem\n\n`;
-      story += `A gastronomia foi parte essencial da nossa experiência. `;
-      story += `Descobrimos ${eventsByType.alimentacao.length} ${eventsByType.alimentacao.length === 1 ? 'lugar especial' : 'lugares especiais'} `;
-      story += `para saborear a culinária local, desde refeições simples até experiências gastronômicas memoráveis.\n\n`;
-    }
-
-    // Seção financeira
-    story += `## 💰 Investimento na Experiência\n\n`;
-    story += `Para tornar essa viagem realidade, investimos um total de **${formatCurrency(totalSpent)}**. `;
-
-    const expenseCount = paidExpenses.length;
-    story += `Ao longo de ${expenseCount} ${expenseCount === 1 ? 'transação' : 'transações'}, `;
-    story += `gerenciamos cuidadosamente nossos recursos para aproveitar ao máximo cada momento.\n\n`;
-
-    if (pendingExpenses.length > 0) {
-      story += `Ainda há ${pendingExpenses.length} ${pendingExpenses.length === 1 ? 'despesa pendente' : 'despesas pendentes'}, `;
-      story += `somando ${formatCurrency(totalPending)}, que não entram nos totais abaixo.\n\n`;
-    }
-
-    if (totalSpent > 0) {
-      story += `### Distribuição dos Gastos\n\n`;
-      Object.entries(expensesByCategory)
-        .sort(([, a], [, b]) => b - a)
-        .forEach(([category, amount]) => {
-          const percentage = ((amount / totalSpent) * 100).toFixed(1);
-          story += `- **${categoryLabels[category] || category}**: ${formatCurrency(amount)} (${percentage}%)\n`;
-        });
-      story += `\n`;
-    }
-
-    // Cálculos financeiros detalhados por participante
-    const paidByPerson = paidExpenses.reduce((acc, exp) => {
-      if (!exp.paidBy) return acc;
-      acc[exp.paidBy] = (acc[exp.paidBy] || 0) + amountOf(exp);
-      return acc;
-    }, {});
-
-    // Despesas antigas podem não ter splitBetween gravado; nesse caso a despesa
-    // fica com quem pagou (mesma regra da aba Financeiro). Sem esta proteção a
-    // aba inteira quebrava ao ler dados antigos.
-    const shouldPayPerPerson = paidExpenses.reduce((acc, exp) => {
-      const splitBetween = Array.isArray(exp.splitBetween) && exp.splitBetween.length > 0
-        ? exp.splitBetween
-        : (exp.paidBy ? [exp.paidBy] : []);
-
-      const splitCount = splitBetween.length;
-      if (!splitCount) return acc;
-
-      const amountPerPerson = amountOf(exp) / splitCount;
-      splitBetween.forEach(personId => {
-        acc[personId] = (acc[personId] || 0) + amountPerPerson;
-      });
-
-      return acc;
-    }, {});
-
-    const balance = {};
-    const allParticipants = [...new Set([...Object.keys(paidByPerson), ...Object.keys(shouldPayPerPerson)])];
-    
-    allParticipants.forEach(personId => {
-      const paid = paidByPerson[personId] || 0;
-      const shouldPay = shouldPayPerPerson[personId] || 0;
-      balance[personId] = paid - shouldPay;
-    });
-
-    // Resumo financeiro por pessoa
-    if (allParticipants.length > 0) {
-      story += `### Resumo Financeiro por Participante\n\n`;
-    }
-    allParticipants.forEach(personId => {
-      const participantName = participantsData[personId]?.displayName || personId.substring(0, 8);
-      const paid = paidByPerson[personId] || 0;
-      const shouldPay = shouldPayPerPerson[personId] || 0;
-      const balanceAmount = balance[personId];
-
-      story += `**${participantName}**\n`;
-      story += `- Pagou: ${formatCurrency(paid)}\n`;
-      story += `- Deve pagar: ${formatCurrency(shouldPay)}\n`;
-      
-      if (balanceAmount > 0.01) {
-        story += `- 💚 Deve receber: ${formatCurrency(balanceAmount)}\n`;
-      } else if (balanceAmount < -0.01) {
-        story += `- 🔴 Deve pagar: ${formatCurrency(Math.abs(balanceAmount))}\n`;
-      } else {
-        story += `- ✅ Está quite\n`;
-      }
-      story += `\n`;
-    });
-    story += `\n`;
-
-    // Conclusão
-    story += `## ✨ Reflexões Finais\n\n`;
-    story += `Esta viagem foi mais do que destinos visitados ou dinheiro gasto. `;
-    story += `Foi sobre os momentos compartilhados, as risadas, as descobertas e as conexões criadas. `;
-    story += `Cada experiência, desde os voos até as refeições, contribuiu para uma jornada que ficará gravada em nossas memórias.\n\n`;
-    
-    story += `Obrigado por fazer parte desta aventura. Que venham muitas outras!\n\n`;
-    story += `---\n\n`;
-    story += `*História gerada automaticamente em ${format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}*\n`;
-
-    // Devolve também os eventos já filtrados/ordenados, para que a exportação
-    // use exatamente o mesmo conjunto que a história descreve
-    return { text: story, events: sortedEvents };
-  }, [currentTrip, currentTrip?.startDate, currentTrip?.endDate, events, expenses, participants, participantsData]);
+    return buildTripStory({ trip: currentTrip, events, expenses, participantNames });
+  }, [currentTrip, currentTrip?.startDate, currentTrip?.endDate, currentTrip?.caixas, events, expenses, participants, participantsData, manualStory]);
 
   const handleCopy = async () => {
     if (tripStory) {
@@ -383,13 +140,13 @@ const HistoriaPage = () => {
       // Conversão simples de Markdown para HTML
       let html = sectionWithTitle
         // Títulos
-        .replace(/^### (.+)$/gm, '<h3 class="text-xl font-bold text-dark mt-6 mb-3">$1</h3>')
+        .replace(/^### (.+)$/gm, '<h3 class="text-lg font-bold text-dark mt-6 mb-2 pb-1 border-b border-sand-300">$1</h3>')
         .replace(/^## (.+)$/gm, '<h2 class="text-2xl font-bold text-dark mt-8 mb-4 flex items-center gap-2">$1</h2>')
         .replace(/^# (.+)$/gm, '<h1 class="text-4xl font-bold text-dark mb-2">$1</h1>')
         // Negrito
-        .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-ocean">$1</strong>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-dark">$1</strong>')
         // Lista
-        .replace(/^- (.+)$/gm, '<li class="ml-6 mb-2">$1</li>')
+        .replace(/^- (.+)$/gm, '<li class="ml-1 mb-2 list-none text-dark-50 leading-relaxed">$1</li>')
         // Itálico
         .replace(/\*(.+?)\*/g, '<em class="italic">$1</em>')
         // Linha horizontal
@@ -475,7 +232,7 @@ const HistoriaPage = () => {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
             >
-              Um resumo automático da sua experiência, pronto para compartilhar
+              O que fizemos em cada dia e quanto custou, pronto para compartilhar
             </motion.p>
 
             {/* Mostra de onde vem o conteúdo, para conferir antes de exportar */}
@@ -486,24 +243,14 @@ const HistoriaPage = () => {
               transition={{ delay: 0.3 }}
             >
               {currentTrip.name} • {tripStory.events?.length ?? 0}{' '}
-              {(tripStory.events?.length ?? 0) === 1 ? 'evento' : 'eventos'} no período •{' '}
-              {expenses.length} {expenses.length === 1 ? 'despesa' : 'despesas'} • atualizado agora
+              {(tripStory.events?.length ?? 0) === 1 ? 'evento' : 'eventos'} em {tripStory.days?.length ?? 0}{' '}
+              {(tripStory.days?.length ?? 0) === 1 ? 'dia' : 'dias'} •{' '}
+              {tripStory.finance
+                ? `total ${formatCurrency(tripStory.finance.total)}${tripStory.finance.totalPending > 0 ? ` (${formatCurrency(tripStory.finance.totalPending)} a pagar)` : ''}`
+                : `${expenses.length} ${expenses.length === 1 ? 'despesa' : 'despesas'}`}
             </motion.p>
           </div>
 
-          {/* Botão Exportar PDF */}
-          {tripStory && (
-            <motion.button
-              variants={buttonVariants}
-              whileHover="hover"
-              whileTap="tap"
-              onClick={handleExportPDF}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2 transition-colors"
-            >
-              <Download className="h-4 w-4" />
-              Exportar PDF
-            </motion.button>
-          )}
         </div>
       </div>
 
