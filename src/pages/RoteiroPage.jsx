@@ -81,23 +81,10 @@ const RoteiroPage = () => {
       return;
     }
     
-    // Log do formulário recebido
-    console.log('[DEBUG] Dados do formulário:', {
-      date: formData.date,
-      time: formData.time,
-      title: formData.title
-    });
-    
     // Criar data local sem conversão de timezone
     const [year, month, day] = formData.date.split('-').map(Number);
     const [hours, minutes] = (formData.time || '00:00').split(':').map(Number);
-    
-    console.log('[DEBUG] Componentes extraídos:', {
-      year, month, day, hours, minutes,
-      formDataDate: formData.date,
-      formDataTime: formData.time
-    });
-    
+
     // Validação de valores numéricos
     if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes)) {
       alert('Data ou horário inválido. Verifique os valores inseridos.');
@@ -108,36 +95,11 @@ const RoteiroPage = () => {
     // Criar Date em UTC para evitar problemas de timezone
     // Isso garante que "21 de fevereiro" seja sempre "21 de fevereiro" independente do fuso
     const utcDate = new Date(Date.UTC(year, month - 1, day, hours, minutes));
-    
-    console.log('[DEBUG] Data criada em UTC:', {
-      utcDate,
-      getUTCFullYear: utcDate.getUTCFullYear(),
-      getUTCMonth: utcDate.getUTCMonth() + 1,
-      getUTCDate: utcDate.getUTCDate(),
-      getUTCHours: utcDate.getUTCHours(),
-      getUTCMinutes: utcDate.getUTCMinutes(),
-      toISOString: utcDate.toISOString()
-    });
-    
+
     const eventData = {
       ...formData,
       date: utcDate
     };
-    
-    console.log('[DEBUG] Salvando evento:', {
-      id: editingEvent?.id,
-      titulo: eventData.title,
-      ano: year,
-      mes: month,
-      dia: day,
-      hora: hours,
-      minuto: minutes,
-      dateUTC: utcDate,
-      dataFormatada: `${day}/${month}/${year} ${hours}:${String(minutes).padStart(2, '0')}`,
-      dateISO: utcDate.toISOString(),
-      timezone: 'UTC (independente de fuso)',
-      isEditing: !!editingEvent
-    });
 
     let result;
     if (editingEvent) {
@@ -236,16 +198,7 @@ const RoteiroPage = () => {
       const day = eventDate.getUTCDate();
       const hours = eventDate.getUTCHours();
       const minutes = eventDate.getUTCMinutes();
-      
-      console.log('[DEBUG] Abrindo modal para editar evento:', {
-        id: event.id,
-        titulo: event.title,
-        dateOriginal: event.date,
-        dateUTC: eventDate.toISOString(),
-        dataFormatada: `${day}/${month}/${year} ${hours}:${String(minutes).padStart(2, '0')}`,
-        componentes: { year, month, day, hours, minutes }
-      });
-      
+
       setEditingEvent(event);
       setFormData({
         type: event.type,
@@ -313,21 +266,10 @@ const RoteiroPage = () => {
       const year = eventDate.getUTCFullYear();
       const month = eventDate.getUTCMonth() + 1;
       const day = eventDate.getUTCDate();
-      const hours = eventDate.getUTCHours();
-      const minutes = eventDate.getUTCMinutes();
-      
+
       // Criar chave de data usando componentes UTC
       const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      
-      console.log('[DEBUG] Agrupando evento:', {
-        id: event.id,
-        titulo: event.title,
-        dateUTC: eventDate.toISOString(),
-        dateKey,
-        dataFormatada: `${day}/${month}/${year} ${hours}:${String(minutes).padStart(2, '0')}`,
-        componentes: { year, month, day, hours, minutes }
-      });
-      
+
       if (!grouped[dateKey]) {
         grouped[dateKey] = [];
       }
@@ -341,15 +283,6 @@ const RoteiroPage = () => {
         const timeB = b.parsedDate.getTime();
         return timeA - timeB;
       });
-      
-      // Log da ordem final após ordenação
-      console.log(`[DEBUG] Eventos ordenados para ${dateKey}:`, 
-        grouped[dateKey].map(e => ({
-          titulo: e.title,
-          horario: `${String(e.parsedDate.getUTCHours()).padStart(2, '0')}:${String(e.parsedDate.getUTCMinutes()).padStart(2, '0')}`,
-          timestamp: e.parsedDate.getTime()
-        }))
-      );
     });
     
     return grouped;
@@ -506,7 +439,6 @@ const RoteiroPage = () => {
             <button 
               className="btn-primary" 
               onClick={() => {
-                console.log('Botão clicado!');
                 // Previne scroll ao abrir modal
                 document.body.style.overflow = 'hidden';
                 setShowTripModal(true);

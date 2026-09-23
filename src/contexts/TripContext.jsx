@@ -206,7 +206,6 @@ export const TripProvider = ({ children }) => {
         id: doc.id,
         ...doc.data()
       }));
-      console.log(`[DEBUG] Carregados ${eventsData.length} eventos para trip ${currentTrip.id}`);
       setEvents(eventsData);
     }, (error) => {
       console.error('Erro ao carregar eventos:', error.message);
@@ -230,7 +229,6 @@ export const TripProvider = ({ children }) => {
         id: doc.id,
         ...doc.data()
       }));
-      console.log(`[DEBUG] Carregadas ${expensesData.length} despesas para trip ${currentTrip.id}`);
       setExpenses(expensesData);
     }, (error) => {
       console.error('Erro ao carregar despesas:', error.message);
@@ -251,7 +249,6 @@ export const TripProvider = ({ children }) => {
           if (userDoc.exists()) {
             const userData = userDoc.data();
             data[uid] = userData;
-            console.log(`[DEBUG] Participante carregado:`, uid, userData.displayName);
           } else {
             console.warn('Usuário não encontrado no Firestore; criando documento...');
             // Se não existe, tentar buscar do Auth e criar
@@ -268,7 +265,6 @@ export const TripProvider = ({ children }) => {
                 email: 'usuario@email.com',
                 createdAt: serverTimestamp()
               });
-              console.log(`[DEBUG] Documento criado para usuário ${uid}`);
             } catch (createError) {
               console.error(`[ERROR] Erro ao criar documento para ${uid}:`, createError);
             }
@@ -353,7 +349,6 @@ export const TripProvider = ({ children }) => {
     if (!user || !db) return { success: false, error: 'Usuário não autenticado' };
 
     try {
-      console.log('[DEBUG] Tentando adicionar participante:', { tripId, email: participantEmail });
       
       // Validação de entrada
       const cleanEmail = participantEmail.toLowerCase().trim();
@@ -370,7 +365,6 @@ export const TripProvider = ({ children }) => {
       }
 
       const tripData = tripDoc.data();
-      console.log('[DEBUG] Dados da viagem:', { participants: tripData.participants, currentUser: user.uid });
       
       if (!tripData.participants.includes(user.uid)) {
         throw new Error('Você não tem permissão para adicionar participantes');
@@ -383,23 +377,19 @@ export const TripProvider = ({ children }) => {
       }
 
       // Buscar usuário pelo email
-      console.log('[DEBUG] Buscando usuário com email:', cleanEmail);
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('email', '==', cleanEmail));
       const querySnapshot = await getDocs(q);
 
-      console.log('[DEBUG] Resultado da busca:', { empty: querySnapshot.empty, size: querySnapshot.size });
 
       if (querySnapshot.empty) {
         // SOLUÇÃO 2: Usuário não existe, adicionar como participante pendente
-        console.log('[DEBUG] Usuário não encontrado, adicionando como pendente...');
         
         await updateDoc(tripRef, {
           pendingParticipants: arrayUnion(cleanEmail),
           updatedAt: serverTimestamp()
         });
         
-        console.log('[DEBUG] Participante pendente adicionado com sucesso!');
         return { 
           success: true, 
           pending: true, 
@@ -412,7 +402,6 @@ export const TripProvider = ({ children }) => {
       const participantId = userDoc.id;
       const participantData = userDoc.data();
       
-      console.log('[DEBUG] Usuário encontrado:', { id: participantId, email: participantData.email, name: participantData.displayName });
 
       // Verificar se já é participante
       if (tripData.participants.includes(participantId)) {
@@ -425,13 +414,11 @@ export const TripProvider = ({ children }) => {
       }
 
       // Adicionar participante
-      console.log('[DEBUG] Adicionando participante ao Firestore...');
       await updateDoc(tripRef, {
         participants: arrayUnion(participantId),
         updatedAt: serverTimestamp()
       });
       
-      console.log('[DEBUG] Participante adicionado com sucesso!');
       return { success: true, pending: false };
     } catch (error) {
       console.error('[ERROR] Erro ao adicionar participante:', error.message);
@@ -489,7 +476,6 @@ export const TripProvider = ({ children }) => {
         createdBy: user.uid,
         createdAt: serverTimestamp()
       });
-      console.log(`[DEBUG] Evento criado: ${docRef.id} para trip ${currentTrip.id}`);
       return { success: true };
     } catch (error) {
       console.error('Erro ao adicionar evento:', error.message);
@@ -613,7 +599,6 @@ export const TripProvider = ({ children }) => {
         tripId: currentTrip.id,
         createdAt: serverTimestamp()
       });
-      console.log(`[DEBUG] Despesa criada: ${docRef.id} para trip ${currentTrip.id}`);
       return { success: true };
     } catch (error) {
       console.error('Erro ao adicionar despesa:', error.message);
