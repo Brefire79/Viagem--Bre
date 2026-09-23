@@ -53,11 +53,6 @@ const useTripCountdown = (startDate, endDate) => {
       const diffInMs = tripStartDate.getTime() - nowDate.getTime();
       const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
 
-      console.log('✅ [Countdown Corrigido]');
-      console.log('Data atual:', now.toLocaleDateString('pt-BR'));
-      console.log('Data da viagem:', tripStart.toLocaleDateString('pt-BR'));
-      console.log('Diferença em dias:', diffInDays);
-
       // Se a viagem ainda não começou
       if (diffInDays > 0) {
         // Para horas e minutos, usar o horário exato
