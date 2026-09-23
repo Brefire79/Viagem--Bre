@@ -824,24 +824,27 @@ const FinanceiroPage = () => {
               <p className={`text-sm md:text-base mb-5 px-4 ${tom600}`}>
                 Dinheiro que cada um separou para gastar na viagem
               </p>
-              <div className="grid grid-cols-3 gap-2 md:gap-4 px-2">
-                <div>
-                  <p className={`text-xs mb-1 ${tom600}`}>Reservado</p>
-                  <p className="text-lg md:text-2xl font-black text-dark truncate">
+              {/* No celular, uma linha por valor (rótulo à esquerda, valor
+                  inteiro à direita): em três colunas "R$ 27.335,00" não cabia
+                  e aparecia cortado. A partir de sm volta para três colunas. */}
+              <div className="px-4 space-y-2 sm:space-y-0 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-2">
+                <div className="flex items-baseline justify-between gap-3 sm:block">
+                  <p className={`text-sm sm:text-xs sm:mb-1 ${tom600}`}>Reservado</p>
+                  <p className="text-xl md:text-2xl font-black text-dark whitespace-nowrap">
                     {temReserva ? formatCurrency(calculations.totalReservado) : '—'}
                   </p>
                 </div>
-                <div>
-                  <p className={`text-xs mb-1 ${tom600}`}>Gasto das caixas</p>
-                  <p className="text-lg md:text-2xl font-black text-dark truncate">
+                <div className="flex items-baseline justify-between gap-3 sm:block">
+                  <p className={`text-sm sm:text-xs sm:mb-1 ${tom600}`}>Gasto das caixas</p>
+                  <p className="text-xl md:text-2xl font-black text-dark whitespace-nowrap">
                     {formatCurrency(gastoCaixas)}
                   </p>
                 </div>
-                <div>
-                  <p className={`text-xs mb-1 ${tom600}`}>
+                <div className="flex items-baseline justify-between gap-3 sm:block">
+                  <p className={`text-sm sm:text-xs sm:mb-1 ${tom600}`}>
                     {estourou ? 'Passou' : 'Ainda sobra'}
                   </p>
-                  <p className={`text-lg md:text-2xl font-black truncate ${tom600}`}>
+                  <p className={`text-xl md:text-2xl font-black whitespace-nowrap ${tom600}`}>
                     {temReserva ? formatCurrency(Math.abs(sobra)) : '—'}
                   </p>
                 </div>
