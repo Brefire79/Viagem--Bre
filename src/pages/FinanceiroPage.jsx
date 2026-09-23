@@ -109,6 +109,15 @@ const FinanceiroPage = () => {
         spent: calculations.byCaixa[caixa.id] || 0
       })),
       semCaixa: calculations.semCaixa,
+      // Mesma previsão do bloco da tela (só existe com caixa criada)
+      forecast: caixas.length > 0 ? {
+        total: calculations.previsaoTotal,
+        pagoComViagem: calculations.semCaixa,
+        gastoCaixas: calculations.gastoCaixas,
+        aindaNasCaixas: calculations.aindaNasCaixas,
+        jaFoi: calculations.totalGeral,
+        aPagar: calculations.totalPending
+      } : null,
       summary: {
         total: calculations.totalGeral,
         totalPaid: calculations.total,
@@ -227,6 +236,22 @@ const FinanceiroPage = () => {
       }
     });
     const totalReservado = caixas.reduce((sum, caixa) => sum + (Number(caixa.amount) || 0), 0);
+    const gastoCaixas = Object.values(byCaixa).reduce((sum, valor) => sum + valor, 0);
+
+    // Previsão total: o que já foi lançado + o que ainda sobra nas caixas, ou
+    // seja, quanto a viagem custa se o dinheiro das caixas for todo gasto.
+    // Caixa que passou do reservado não soma nada: o excesso já está no gasto
+    // e não pode descontar a sobra das outras caixas.
+    const aindaNasCaixas = caixas.reduce((sum, caixa) => {
+      const sobra = (Number(caixa.amount) || 0) - (byCaixa[caixa.id] || 0);
+      return sum + Math.max(0, sobra);
+    }, 0);
+    const previsaoTotal = totalGeral + aindaNasCaixas;
+    // Caixas acima do reservado: é por causa delas que "Ainda nas caixas" (só
+    // sobras) difere do "Ainda sobra" do bloco Nossas caixas (sobra - excesso).
+    const caixasQuePassaram = caixas
+      .filter(caixa => (Number(caixa.amount) || 0) - (byCaixa[caixa.id] || 0) < -0.005)
+      .map(caixa => caixa.name);
 
     // Balanço final (quem deve/recebe)
     const balance = {};
@@ -248,6 +273,10 @@ const FinanceiroPage = () => {
       byCaixa,
       semCaixa,
       totalReservado,
+      gastoCaixas,
+      aindaNasCaixas,
+      previsaoTotal,
+      caixasQuePassaram,
       paidByPerson,
       shouldPayPerPerson,
       balance
@@ -660,7 +689,7 @@ const FinanceiroPage = () => {
           guardado à parte e não desconta de caixa nenhuma - misturar os dois
           fazia o bloco dizer "passou R$ 12 mil" logo que as caixas diminuíam. */}
       {(() => {
-        const gastoCaixas = Object.values(calculations.byCaixa).reduce((sum, valor) => sum + valor, 0);
+        const gastoCaixas = calculations.gastoCaixas;
         const sobra = calculations.totalReservado - gastoCaixas;
         const temReserva = calculations.totalReservado > 0;
         const estourou = temReserva && sobra < -0.005;
@@ -715,6 +744,75 @@ const FinanceiroPage = () => {
                 </p>
               )}
             </div>
+          </motion.div>
+        );
+      })()}
+
+      {/* PREVISÃO TOTAL - quanto a viagem custa se o que sobra nas caixas for
+          todo gasto. Sem caixa a previsão seria igual ao Total da Viagem, então
+          o bloco nem aparece. */}
+      {caixas.length > 0 && (() => {
+        const previsao = calculations.previsaoTotal;
+        const pctDe = (valor) => (previsao > 0 ? (valor / previsao) * 100 : 0);
+        const partes = [
+          { label: 'Pago com Viagem', valor: calculations.semCaixa, cor: 'bg-aqua' },
+          { label: 'Já gasto das caixas', valor: calculations.gastoCaixas, cor: 'bg-ocean' },
+          { label: 'Ainda nas caixas', valor: calculations.aindaNasCaixas, cor: 'bg-ocean-200' }
+        ];
+        return (
+          <motion.div
+            className="card mb-6 border-2 border-ocean"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.55 }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingUp className="w-5 h-5 text-ocean" />
+              <h2 className="text-lg font-bold text-dark">Previsão total</h2>
+            </div>
+            <p className="text-sm text-sand-500 mb-3">
+              Quanto a viagem vai custar se gastarmos tudo o que ainda está nas caixas
+            </p>
+            <p className="text-3xl md:text-4xl font-black text-dark mb-4">
+              {formatCurrency(previsao)}
+            </p>
+
+            <div className="flex w-full h-3 rounded-full overflow-hidden bg-sand-200 mb-4">
+              {partes.map(parte => (
+                <div
+                  key={parte.label}
+                  className={`h-full ${parte.cor} transition-all duration-500`}
+                  style={{ width: `${pctDe(parte.valor)}%` }}
+                />
+              ))}
+            </div>
+
+            <div className="space-y-2 text-sm">
+              {partes.map(parte => (
+                <div key={parte.label} className="flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded ${parte.cor} flex-shrink-0`} />
+                  <span className="text-sand-600">{parte.label}</span>
+                  <span className="ml-auto font-semibold text-dark">{formatCurrency(parte.valor)}</span>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-sand-600 border-t border-sand-200 mt-4 pt-3">
+              Já foi <strong className="text-dark">{formatCurrency(calculations.totalGeral)}</strong>
+              {' '}({pctDe(calculations.totalGeral).toFixed(0)}%)
+              {calculations.totalPending > 0 && (
+                <>. Inclui {formatCurrency(calculations.totalPending)} a pagar</>
+              )}
+              .
+            </p>
+            {calculations.caixasQuePassaram.length > 0 && (
+              <p className="text-xs text-sand-500 mt-2">
+                "Ainda nas caixas" soma só as caixas que têm sobra. O que{' '}
+                {calculations.caixasQuePassaram.join(', ')}{' '}
+                {calculations.caixasQuePassaram.length === 1 ? 'passou' : 'passaram'} do reservado já
+                está no gasto — por isso é diferente do "Ainda sobra" de Nossas caixas.
+              </p>
+            )}
           </motion.div>
         );
       })()}

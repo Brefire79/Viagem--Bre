@@ -259,6 +259,52 @@ export class PDFExporter {
         y += 3;
       }
 
+      // ===== Previsão total =====
+      // Mesma conta do bloco da tela: já lançado + o que ainda sobra nas caixas.
+      const forecast = data.forecast;
+      if (forecast) {
+        const rowH = 6.2;
+        ensureSpace(8 + rowH * 6);
+
+        fieldLabel(pdf, 'previsão total', margin, y, { size: 7, color: COLOR.ocean, spacing: 1 });
+        y += 5;
+        perforation(pdf, margin, y - 3, pageW - margin, { dash: [0.6, 1.4] });
+        y += 2;
+
+        [
+          ['Pago com Viagem', forecast.pagoComViagem],
+          ['Já gasto das caixas', forecast.gastoCaixas],
+          ['Ainda nas caixas', forecast.aindaNasCaixas]
+        ].forEach(([label, valor]) => {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9.5);
+          setInk(pdf, COLOR.ink);
+          pdf.text(label, margin, y);
+          dataText(pdf, money(valor), pageW - margin, y, { size: 9, align: 'right' });
+          y += rowH;
+        });
+
+        perforation(pdf, margin, y - rowH + 2, pageW - margin, { dash: [0.6, 1.4] });
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(10.5);
+        setInk(pdf, COLOR.ink);
+        pdf.text('Se gastarmos tudo das caixas', margin, y + 0.5);
+        dataText(pdf, money(forecast.total), pageW - margin, y + 0.5, { size: 11, color: COLOR.ocean, align: 'right' });
+        y += rowH;
+
+        const total = Number(forecast.total) || 0;
+        const pct = total > 0 ? Math.round(((Number(forecast.jaFoi) || 0) / total) * 100) : 0;
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(8);
+        setInk(pdf, COLOR.muted);
+        pdf.text(
+          `Já foi ${money(forecast.jaFoi)} (${pct}%)` +
+            (Number(forecast.aPagar) > 0 ? `, incluindo ${money(forecast.aPagar)} a pagar.` : '.'),
+          margin, y
+        );
+        y += rowH + 3;
+      }
+
       // ===== Despesas =====
       const expenses = Array.isArray(data.expenses) ? data.expenses : [];
 
