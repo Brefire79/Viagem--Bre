@@ -11,6 +11,12 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { pageVariants, cardVariants, buttonVariants, modalOverlayVariants, modalContentVariants } from '../utils/motionVariants';
 
+// Dia de hoje no fuso do aparelho, para sugerir na despesa nova. É o "agora"
+// de quem está lançando, não uma data de calendário salva - por isso fuso
+// local. toISOString() dava o dia em UTC: à noite (21h no Brasil, 20h em
+// Orlando) a despesa já vinha sugerida com a data de amanhã.
+const hojeLocal = () => format(new Date(), 'yyyy-MM-dd');
+
 const FinanceiroPage = () => {
   const { user } = useAuth();
   const { expenses, addExpense, updateExpense, deleteExpense, saveCaixas, saveCustomCategories, currentTrip, participants, participantsData } = useTrip();
@@ -21,7 +27,7 @@ const FinanceiroPage = () => {
     description: '',
     amount: '',
     paidBy: user?.uid || '',
-    date: new Date().toISOString().split('T')[0],
+    date: hojeLocal(),
     status: 'pago', // 'pago' ou 'pendente'
     splitBetween: [],
     caixaId: '' // Caixa (reserva) de onde o dinheiro sai; '' = sem caixa
@@ -154,23 +160,7 @@ const FinanceiroPage = () => {
         dateB = new Date(b.date);
       }
       
-      // Converter para UTC para comparação consistente
-      const timeA = dateA.getTime();
-      const timeB = dateB.getTime();
-      
-      console.log('[DEBUG] Comparando datas no sort:', {
-        expenseADate: a.description,
-        dateAOriginal: a.date,
-        dateAConverted: dateA.toISOString(),
-        timeA,
-        expenseBDate: b.description,
-        dateBOriginal: b.date,
-        dateBConverted: dateB.toISOString(),
-        timeB,
-        result: timeA - timeB
-      });
-      
-      return timeA - timeB;
+      return dateA.getTime() - dateB.getTime();
     });
   };
 
@@ -248,14 +238,6 @@ const FinanceiroPage = () => {
       balance[personId] = paid - shouldPay;
     });
 
-    console.log('[DEBUG] Cálculo de despesas:', {
-      despesasPagas: paidExpenses.length,
-      total,
-      paidByPerson,
-      shouldPayPerPerson,
-      balance
-    });
-
     return {
       total,
       totalPending,
@@ -302,17 +284,6 @@ const FinanceiroPage = () => {
     
     // Criar Date em UTC (meio-dia) para evitar problemas de fuso horário
     const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0));
-    
-    console.log('[DEBUG] Salvando despesa:', {
-      descricao: formData.description,
-      valor: Number(formData.amount),
-      ano: year,
-      mes: month,
-      dia: day,
-      dateUTC: utcDate.toISOString(),
-      status: formData.status,
-      pagoPor: formData.paidBy
-    });
     
     const expenseData = {
       ...formData,
@@ -382,7 +353,7 @@ const FinanceiroPage = () => {
         description: '',
         amount: '',
         paidBy: defaultPaidBy,
-        date: new Date().toISOString().split('T')[0],
+        date: hojeLocal(),
         status: 'pago',
         // Por padrao, divide entre todos os participantes
         splitBetween: participants && participants.length > 0
