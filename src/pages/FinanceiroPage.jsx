@@ -17,6 +17,13 @@ import { pageVariants, cardVariants, buttonVariants, modalOverlayVariants, modal
 // Orlando) a despesa já vinha sugerida com a data de amanhã.
 const hojeLocal = () => format(new Date(), 'yyyy-MM-dd');
 
+// Caixa em dólar: guarda US$ levados (foreignAmount) e a cotação de compra
+// (rate, R$ por US$ 1). Tudo que soma a viagem continua em R$ pela cotação da
+// caixa - o dólar só aparece onde o casal lida com dólar.
+const isCaixaDolar = (caixa) => caixa?.currency === 'USD' && Number(caixa?.rate) > 0;
+const centavos = (valor) => Math.round(valor * 100) / 100;
+const formatUSD = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' }).format(valor);
+
 const FinanceiroPage = () => {
   const { user } = useAuth();
   const { expenses, addExpense, updateExpense, deleteExpense, saveCaixas, saveCustomCategories, currentTrip, participants, participantsData } = useTrip();
@@ -41,7 +48,8 @@ const FinanceiroPage = () => {
   );
   const [showCaixaModal, setShowCaixaModal] = useState(false);
   const [editingCaixa, setEditingCaixa] = useState(null);
-  const [caixaForm, setCaixaForm] = useState({ name: '', amount: '' });
+  const [caixaForm, setCaixaForm] = useState({ name: '', amount: '', currency: 'BRL', foreignAmount: '', rate: '' });
+  const findCaixa = (caixaId) => (caixaId ? caixas.find(caixa => caixa.id === caixaId) : null);
 
   // Categorias de despesas: as seis fixas mais as criadas pelo usuário nesta
   // viagem (trip.customCategories). As extras usam o mesmo ícone e ganham cor
@@ -95,7 +103,10 @@ const FinanceiroPage = () => {
       expenses: sortedExpenses.map(expense => ({
         ...expense,
         paidByName: getParticipantName(expense.paidBy),
-        caixaName: caixas.find(caixa => caixa.id === expense.caixaId)?.name || 'Viagem',
+        caixaName: (caixas.find(caixa => caixa.id === expense.caixaId)?.name || 'Viagem') +
+          (expense.currency === 'USD' && Number(expense.foreignAmount) > 0
+            ? ` · ${formatUSD(Number(expense.foreignAmount))}`
+            : ''),
         categoryLabel: (categories[expense.category] || categories.outros).label,
         categoryIsCustom: Boolean(categories[expense.category]?.custom)
       })),
@@ -104,7 +115,10 @@ const FinanceiroPage = () => {
       // dividia só o total pago pela contagem de TODAS as despesas.
       // Reservas por caixa, com o mesmo gasto que a tela mostra
       caixas: caixas.map(caixa => ({
-        name: caixa.name,
+        // Caixa em dólar: valores do relatório em R$, com o US$ ao lado do nome
+        name: isCaixaDolar(caixa)
+          ? `${caixa.name} (${formatUSD(Number(caixa.foreignAmount) || 0)} a R$ ${Number(caixa.rate).toFixed(2).replace('.', ',')})`
+          : caixa.name,
         reserved: Number(caixa.amount) || 0,
         spent: calculations.byCaixa[caixa.id] || 0
       })),
@@ -225,12 +239,23 @@ const FinanceiroPage = () => {
     // (hotel a pagar) já saiu da reserva na prática. Despesa cuja caixa foi
     // apagada, ou que nunca teve caixa, cai em `semCaixa`.
     const byCaixa = {};
+    // Gasto em US$ das caixas em dólar, somado pelo valor em dólar de cada
+    // despesa (é o que bate com a carteira). Despesa sem valor em US$ cai
+    // para R$ ÷ cotação.
+    const byCaixaUSD = {};
     let semCaixa = 0;
-    const caixaIds = new Set(caixas.map(caixa => caixa.id));
+    const caixasPorId = new Map(caixas.map(caixa => [caixa.id, caixa]));
     expenses.forEach(exp => {
       const valor = Number(exp.amount) || 0;
-      if (exp.caixaId && caixaIds.has(exp.caixaId)) {
+      const caixa = exp.caixaId ? caixasPorId.get(exp.caixaId) : null;
+      if (caixa) {
         byCaixa[exp.caixaId] = (byCaixa[exp.caixaId] || 0) + valor;
+        if (isCaixaDolar(caixa)) {
+          const emDolar = exp.currency === 'USD' && Number(exp.foreignAmount) > 0
+            ? Number(exp.foreignAmount)
+            : valor / Number(caixa.rate);
+          byCaixaUSD[exp.caixaId] = (byCaixaUSD[exp.caixaId] || 0) + emDolar;
+        }
       } else {
         semCaixa += valor;
       }
@@ -271,6 +296,7 @@ const FinanceiroPage = () => {
       pendingCount: pendingExpenses.length,
       byCategory,
       byCaixa,
+      byCaixaUSD,
       semCaixa,
       totalReservado,
       gastoCaixas,
@@ -314,9 +340,23 @@ const FinanceiroPage = () => {
     // Criar Date em UTC (meio-dia) para evitar problemas de fuso horário
     const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0));
     
+    // Pago com caixa em dólar: o valor digitado é US$ e o R$ sai da cotação
+    // da caixa. Nas demais, o valor já é R$ e os campos de dólar são limpos
+    // (a despesa pode ter trocado de caixa na edição).
+    const caixaDaDespesa = findCaixa(formData.caixaId);
+    const valorDigitado = Number(formData.amount);
+    const moeda = isCaixaDolar(caixaDaDespesa)
+      ? {
+          amount: centavos(valorDigitado * Number(caixaDaDespesa.rate)),
+          currency: 'USD',
+          foreignAmount: valorDigitado,
+          rate: Number(caixaDaDespesa.rate)
+        }
+      : { amount: valorDigitado, currency: null, foreignAmount: null, rate: null };
+
     const expenseData = {
       ...formData,
-      amount: Number(formData.amount),
+      ...moeda,
       date: utcDate,
       status: formData.status || 'pago',
       caixaId: formData.caixaId || null,
@@ -357,11 +397,15 @@ const FinanceiroPage = () => {
       const month = expenseDate.getUTCMonth() + 1;
       const day = expenseDate.getUTCDate();
       
+      // Despesa em dólar numa caixa que ainda é em dólar: edita em US$
+      const emDolar = expense.currency === 'USD' && Number(expense.foreignAmount) > 0 &&
+        isCaixaDolar(findCaixa(expense.caixaId));
+
       setEditingExpense(expense);
       setFormData({
         category: expense.category,
         description: expense.description,
-        amount: expense.amount.toString(),
+        amount: String(emDolar ? expense.foreignAmount : (expense.amount ?? '')),
         paidBy: expense.paidBy,
         date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
         status: expense.status || 'pago',
@@ -414,17 +458,40 @@ const FinanceiroPage = () => {
     return achada ? achada.id : '';
   };
 
+  // Troca a caixa do formulário. Se a moeda muda (R$ <-> US$), converte o
+  // valor já digitado pela cotação, para o número continuar valendo o mesmo.
+  const comCaixa = (form, novaCaixaId) => {
+    // Quantos R$ vale 1 unidade do valor digitado naquela caixa
+    const reaisPorUnidade = (caixaId) => {
+      const caixa = findCaixa(caixaId);
+      return isCaixaDolar(caixa) ? Number(caixa.rate) : 1;
+    };
+    const valor = Number(form.amount);
+    const antes = reaisPorUnidade(form.caixaId);
+    const depois = reaisPorUnidade(novaCaixaId);
+    const amount = valor > 0 && antes !== depois
+      ? String(centavos((valor * antes) / depois))
+      : form.amount;
+    return { ...form, caixaId: novaCaixaId, amount };
+  };
+
   const handleSelectCategory = (key) => {
     const sugerida = caixaParaCategoria(key);
-    setFormData({ ...formData, category: key, caixaId: sugerida || formData.caixaId });
+    setFormData(comCaixa({ ...formData, category: key }, sugerida || formData.caixaId));
   };
 
   // ===== Caixas (criar / renomear / apagar) =====
   const handleOpenCaixaModal = (caixa = null) => {
     setEditingCaixa(caixa);
     setCaixaForm(caixa
-      ? { name: caixa.name, amount: String(caixa.amount ?? '') }
-      : { name: '', amount: '' });
+      ? {
+          name: caixa.name,
+          amount: String(caixa.amount ?? ''),
+          currency: isCaixaDolar(caixa) ? 'USD' : 'BRL',
+          foreignAmount: String(caixa.foreignAmount ?? ''),
+          rate: String(caixa.rate ?? '')
+        }
+      : { name: '', amount: '', currency: 'BRL', foreignAmount: '', rate: '' });
     document.body.style.overflow = 'hidden';
     setShowCaixaModal(true);
   };
@@ -438,26 +505,73 @@ const FinanceiroPage = () => {
   const handleSubmitCaixa = async (e) => {
     e.preventDefault();
     const name = caixaForm.name.trim();
-    const amount = Number(caixaForm.amount);
     if (!name) {
       alert('Dê um nome para a caixa (ex.: Breno, Claudia, Comida)');
       return;
     }
-    if (isNaN(amount) || amount < 0) {
-      alert('Digite um valor válido para a reserva');
-      return;
+
+    let dados;
+    if (caixaForm.currency === 'USD') {
+      const foreignAmount = Number(caixaForm.foreignAmount);
+      const rate = Number(caixaForm.rate);
+      if (isNaN(foreignAmount) || foreignAmount < 0) {
+        alert('Digite quantos dólares vocês levam');
+        return;
+      }
+      if (!(rate > 0)) {
+        alert('Digite a cotação que vocês pagaram (ex.: 5,40)');
+        return;
+      }
+      dados = { name, currency: 'USD', foreignAmount, rate, amount: centavos(foreignAmount * rate) };
+    } else {
+      const amount = Number(caixaForm.amount);
+      if (isNaN(amount) || amount < 0) {
+        alert('Digite um valor válido para a reserva');
+        return;
+      }
+      // Sem os campos de dólar: saveCaixas grava só { id, name, amount }
+      dados = { name, amount, currency: null };
+    }
+
+    // Cotação corrigida numa caixa com despesas: o valor em US$ de cada
+    // despesa fica, o R$ é recalculado - senão a sobra em US$ deixa de bater
+    // com os totais em R$.
+    const despesasEmDolar = editingCaixa && isCaixaDolar(editingCaixa) && dados.currency === 'USD' &&
+      Number(editingCaixa.rate) !== dados.rate
+      ? expenses.filter(exp => exp.caixaId === editingCaixa.id && Number(exp.foreignAmount) > 0)
+      : [];
+    if (despesasEmDolar.length > 0) {
+      const ok = window.confirm(
+        `A cotação mudou para R$ ${dados.rate.toFixed(2).replace('.', ',')}. ` +
+        `Recalcular em reais ${despesasEmDolar.length === 1 ? 'a despesa' : `as ${despesasEmDolar.length} despesas`} desta caixa? ` +
+        'Os valores em dólar não mudam.'
+      );
+      if (!ok) return;
     }
 
     const novaLista = editingCaixa
-      ? caixas.map(caixa => caixa.id === editingCaixa.id ? { ...caixa, name, amount } : caixa)
-      : [...caixas, { id: `caixa_${Date.now().toString(36)}`, name, amount }];
+      ? caixas.map(caixa => caixa.id === editingCaixa.id ? { ...caixa, ...dados } : caixa)
+      : [...caixas, { id: `caixa_${Date.now().toString(36)}`, ...dados }];
 
     const result = await saveCaixas(novaLista);
-    if (result.success) {
-      handleCloseCaixaModal();
-    } else {
+    if (!result.success) {
       alert('Erro ao salvar caixa: ' + (result.error || 'Erro desconhecido'));
+      return;
     }
+
+    const falhas = [];
+    for (const exp of despesasEmDolar) {
+      const r = await updateExpense(exp.id, {
+        amount: centavos(Number(exp.foreignAmount) * dados.rate),
+        currency: 'USD',
+        rate: dados.rate
+      });
+      if (!r.success) falhas.push(exp.description || exp.id);
+    }
+    if (falhas.length) {
+      alert(`A caixa foi salva, mas não deu para recalcular: ${falhas.join(', ')}. Abra e salve essas despesas de novo.`);
+    }
+    handleCloseCaixaModal();
   };
 
   // ===== Categorias extras (criar / apagar) =====
@@ -851,9 +965,13 @@ const FinanceiroPage = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
             {caixas.map((caixa, index) => {
-              const reservado = Number(caixa.amount) || 0;
-              const gasto = calculations.byCaixa[caixa.id] || 0;
+              // Caixa em dólar compara em US$ (o que está na carteira); as
+              // demais, em R$
+              const dolar = isCaixaDolar(caixa);
+              const reservado = dolar ? Number(caixa.foreignAmount) || 0 : Number(caixa.amount) || 0;
+              const gasto = dolar ? calculations.byCaixaUSD[caixa.id] || 0 : calculations.byCaixa[caixa.id] || 0;
               const saldo = reservado - gasto;
+              const fmt = dolar ? formatUSD : formatCurrency;
               const pct = reservado > 0 ? Math.min((gasto / reservado) * 100, 100) : (gasto > 0 ? 100 : 0);
               const passou = saldo < -0.005;
               const quase = !passou && reservado > 0 && pct >= 85;
@@ -874,6 +992,9 @@ const FinanceiroPage = () => {
                     <h3 className="font-bold text-dark truncate flex items-center gap-2">
                       <PiggyBank className="w-4 h-4 text-ocean flex-shrink-0" />
                       <span className="truncate">{caixa.name}</span>
+                      {dolar && (
+                        <span className="text-xs font-semibold bg-ocean-50 text-ocean-700 px-2 py-0.5 rounded-full flex-shrink-0">US$</span>
+                      )}
                     </h3>
                     <div className="flex gap-1 flex-shrink-0">
                       <button
@@ -894,16 +1015,25 @@ const FinanceiroPage = () => {
                       </button>
                     </div>
                   </div>
-                  <p className="text-xs text-sand-500">Reservado {formatCurrency(reservado)}</p>
+                  <p className="text-xs text-sand-500">
+                    {dolar
+                      ? `Levamos ${fmt(reservado)} · cotação R$ ${Number(caixa.rate).toFixed(2).replace('.', ',')}`
+                      : `Reservado ${fmt(reservado)}`}
+                  </p>
                   <div className="w-full h-2 bg-sand-200 rounded-full overflow-hidden my-2">
                     <div className={`h-full ${barra} transition-all duration-500`} style={{ width: `${pct}%` }} />
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-dark">Gasto {formatCurrency(gasto)}</span>
+                    <span className="text-sm text-dark">Gasto {fmt(gasto)}</span>
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${pill}`}>
-                      {passou ? `passou ${formatCurrency(Math.abs(saldo))}` : `sobra ${formatCurrency(saldo)}`}
+                      {passou ? `passou ${fmt(Math.abs(saldo))}` : `sobra ${fmt(saldo)}`}
                     </span>
                   </div>
+                  {dolar && (
+                    <p className="text-xs text-sand-400 text-right mt-1">
+                      = {formatCurrency(centavos(saldo * Number(caixa.rate)))}
+                    </p>
+                  )}
                 </motion.div>
               );
             })}
@@ -1109,9 +1239,16 @@ const FinanceiroPage = () => {
                           Pago com: <strong className="text-dark">{caixaDaDespesa ? caixaDaDespesa.name : 'Viagem'}</strong>
                         </span>
                       </div>
-                      <p className="text-xl font-bold text-ocean">
-                        {formatCurrency(expense.amount)}
-                      </p>
+                      {expense.currency === 'USD' && Number(expense.foreignAmount) > 0 ? (
+                        <div className="text-right">
+                          <p className="text-xl font-bold text-ocean">{formatUSD(Number(expense.foreignAmount))}</p>
+                          <p className="text-xs text-sand-500">{formatCurrency(expense.amount)}</p>
+                        </div>
+                      ) : (
+                        <p className="text-xl font-bold text-ocean">
+                          {formatCurrency(expense.amount)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1229,7 +1366,7 @@ const FinanceiroPage = () => {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setFormData({ ...formData, caixaId: '' })}
+                    onClick={() => setFormData(comCaixa(formData, ''))}
                     className={`px-3 py-2 rounded-full text-sm font-medium border-2 transition-all flex items-center gap-1 ${
                       !formData.caixaId
                         ? 'bg-aqua border-aqua text-white'
@@ -1243,7 +1380,7 @@ const FinanceiroPage = () => {
                     <button
                       key={caixa.id}
                       type="button"
-                      onClick={() => setFormData({ ...formData, caixaId: caixa.id })}
+                      onClick={() => setFormData(comCaixa(formData, caixa.id))}
                       className={`px-3 py-2 rounded-full text-sm font-medium border-2 transition-all flex items-center gap-1 ${
                         formData.caixaId === caixa.id
                           ? 'bg-ocean border-ocean text-white'
@@ -1252,6 +1389,7 @@ const FinanceiroPage = () => {
                     >
                       <PiggyBank className="w-4 h-4" />
                       {caixa.name}
+                      {isCaixaDolar(caixa) && <span className="text-xs opacity-75">US$</span>}
                     </button>
                   ))}
                 </div>
@@ -1279,11 +1417,12 @@ const FinanceiroPage = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-dark-100 mb-2">
-                    Valor (R$) *
+                    {isCaixaDolar(findCaixa(formData.caixaId)) ? 'Valor (US$) *' : 'Valor (R$) *'}
                   </label>
                   <input
                     type="number"
                     step="0.01"
+                    inputMode="decimal"
                     value={formData.amount}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                     className="input"
@@ -1305,6 +1444,17 @@ const FinanceiroPage = () => {
                   />
                 </div>
               </div>
+              {(() => {
+                const caixa = findCaixa(formData.caixaId);
+                const valor = Number(formData.amount);
+                if (!isCaixaDolar(caixa) || !(valor > 0)) return null;
+                return (
+                  <p className="text-sm bg-ocean-50 text-ocean-700 rounded-lg px-3 py-2 -mt-2">
+                    = <strong>{formatCurrency(centavos(valor * Number(caixa.rate)))}</strong> na cotação da caixa
+                    (R$ {Number(caixa.rate).toFixed(2).replace('.', ',')})
+                  </p>
+                );
+              })()}
 
               {/* "Quem pagou" e "Dividir entre" não aparecem mais: a viagem é do
                   casal e o dinheiro é um só. Os campos continuam gravados por
@@ -1425,7 +1575,7 @@ const FinanceiroPage = () => {
           }}
         >
           <div
-            className="bg-white rounded-2xl max-w-md w-full animate-slide-up"
+            className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-6 border-b border-sand-300">
@@ -1459,24 +1609,104 @@ const FinanceiroPage = () => {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-100 mb-2">
-                  Valor reservado (R$) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={caixaForm.amount}
-                  onChange={(e) => setCaixaForm({ ...caixaForm, amount: e.target.value })}
-                  className="input"
-                  placeholder="0.00"
-                  required
-                />
-                <p className="text-xs text-sand-500 mt-1">
-                  Quanto separamos nesta caixa para levar na viagem.
-                </p>
-              </div>
+              {/* Moeda: só dá para trocar enquanto a caixa não tem despesa,
+                  senão os valores já lançados mudariam de sentido */}
+              {(() => {
+                const temDespesa = editingCaixa && expenses.some(exp => exp.caixaId === editingCaixa.id);
+                if (temDespesa) {
+                  return (
+                    <p className="text-xs text-sand-500">
+                      Moeda: <strong className="text-dark">{caixaForm.currency === 'USD' ? 'Dólar (US$)' : 'Real (R$)'}</strong>
+                      {' '}— não muda depois de lançar despesas nesta caixa.
+                    </p>
+                  );
+                }
+                return (
+                  <div>
+                    <label className="block text-sm font-medium text-dark-100 mb-2">
+                      Moeda
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[['BRL', 'R$ Real'], ['USD', 'US$ Dólar']].map(([codigo, rotulo]) => (
+                        <button
+                          key={codigo}
+                          type="button"
+                          onClick={() => setCaixaForm({ ...caixaForm, currency: codigo })}
+                          className={`px-3 py-2 rounded-full text-sm font-medium border-2 transition-all ${
+                            caixaForm.currency === codigo
+                              ? 'bg-ocean border-ocean text-white'
+                              : 'border-ocean-200 text-ocean-700 hover:border-ocean'
+                          }`}
+                        >
+                          {rotulo}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {caixaForm.currency === 'USD' ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-100 mb-2">
+                      Quanto levamos (US$) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      inputMode="decimal"
+                      value={caixaForm.foreignAmount}
+                      onChange={(e) => setCaixaForm({ ...caixaForm, foreignAmount: e.target.value })}
+                      className="input"
+                      placeholder="1000.00"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-100 mb-2">
+                      Cotação que pagamos (R$ por US$ 1) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      inputMode="decimal"
+                      value={caixaForm.rate}
+                      onChange={(e) => setCaixaForm({ ...caixaForm, rate: e.target.value })}
+                      className="input"
+                      placeholder="5.40"
+                      required
+                    />
+                    {Number(caixaForm.foreignAmount) > 0 && Number(caixaForm.rate) > 0 && (
+                      <p className="text-sm bg-ocean-50 text-ocean-700 rounded-lg px-3 py-2 mt-2">
+                        Custou <strong>{formatCurrency(centavos(Number(caixaForm.foreignAmount) * Number(caixaForm.rate)))}</strong>
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-dark-100 mb-2">
+                    Valor reservado (R$) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    inputMode="decimal"
+                    value={caixaForm.amount}
+                    onChange={(e) => setCaixaForm({ ...caixaForm, amount: e.target.value })}
+                    className="input"
+                    placeholder="0.00"
+                    required
+                  />
+                  <p className="text-xs text-sand-500 mt-1">
+                    Quanto separamos nesta caixa para levar na viagem.
+                  </p>
+                </div>
+              )}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={handleCloseCaixaModal} className="btn-outline flex-1">
                   Cancelar

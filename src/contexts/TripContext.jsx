@@ -529,15 +529,31 @@ export const TripProvider = ({ children }) => {
   // { id, name, amount }. Substitui o array inteiro - quem chama já monta a
   // lista final (criar, renomear, apagar), o que evita dois updates parciais
   // se disputarem no Firestore.
+  //
+  // Caixa em dólar: + { currency: 'USD', foreignAmount (US$ levados), rate
+  // (R$ pagos por US$ 1) }. `amount` continua em R$ (= foreignAmount × rate)
+  // para que totais, História e PDFs sigam lendo só `amount`.
   const saveCaixas = async (caixas) => {
     if (!currentTrip || !db) return { success: false, error: 'Nenhuma viagem selecionada' };
 
     const limpas = (Array.isArray(caixas) ? caixas : [])
-      .map(caixa => ({
-        id: String(caixa.id),
-        name: String(caixa.name || '').trim(),
-        amount: Number(caixa.amount) || 0
-      }))
+      .map(caixa => {
+        const base = {
+          id: String(caixa.id),
+          name: String(caixa.name || '').trim(),
+          amount: Number(caixa.amount) || 0
+        };
+        if (caixa.currency !== 'USD') return base;
+        const foreignAmount = Number(caixa.foreignAmount) || 0;
+        const rate = Number(caixa.rate) || 0;
+        return {
+          ...base,
+          currency: 'USD',
+          foreignAmount,
+          rate,
+          amount: Math.round(foreignAmount * rate * 100) / 100
+        };
+      })
       .filter(caixa => caixa.id && caixa.name);
 
     return updateTrip(currentTrip.id, { caixas: limpas });
